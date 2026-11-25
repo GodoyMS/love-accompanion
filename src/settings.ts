@@ -64,7 +64,7 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceReplies: true,
   autonomy: { feelings: true, health: true, conflicts: false, plans: false },
   // Calm, unhurried, neutral: slower than default, steady, close to your real voice, no dramatization.
-  voice: { model: 'eleven_multilingual_v2', speed: 0.9, stability: 0.65, similarity: 0.9, style: 0 },
+  voice: { model: 'eleven_multilingual_v2', speed: 1.02, stability: 0.4, similarity: 0.85, style: 0.35 },
   disclosure: {
     doubtText: 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Ya le aviso para que te escriba él.',
     directText: 'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Ya le aviso para que te escriba él.',
@@ -93,6 +93,11 @@ export async function getSettings(): Promise<Settings> {
       // You asked for fully autonomous, always-on replies: sleep hours off.
       saved.quietHours = null;
       saved._v = 4;
+    }
+    if ((saved._v ?? 0) < 5 && Object.keys(saved).length) {
+      // The calm/neutral voice sounded flat and dry: more energy and expression (keeps your model).
+      if (saved.voice) saved.voice = { ...saved.voice, speed: 1.02, stability: 0.4, similarity: 0.85, style: 0.35 };
+      saved._v = 5;
       await kvSet('settings', saved);
     }
     cache = {
@@ -107,7 +112,7 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...(await getSettings()), ...patch, _v: 4 };
+  const next = { ...(await getSettings()), ...patch, _v: 5 };
   await kvSet('settings', next);
   cache = next;
   return next;
