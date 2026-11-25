@@ -115,16 +115,38 @@ const DECISION_SCHEMA = {
 };
 
 /** Call Claude and parse its JSON answer. */
+/** The model stopped without giving a usable answer (declined, or ran out of room twice). */
+export class NoAnswer extends Error {}
+
 async function askJson<T>(params: Omit<Anthropic.MessageCreateParamsNonStreaming, 'output_config'>, schema: object): Promise<T> {
-  const res = await anthropic.messages.create({
-    ...params,
-    output_config: { format: { type: 'json_schema', schema: schema as Record<string, unknown> } },
-  });
-  const text = res.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-  return JSON.parse(text) as T;
+  let maxTokens = params.max_tokens;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await anthropic.messages.create({
+      ...params,
+      max_tokens: maxTokens,
+      output_config: { format: { type: 'json_schema', schema: schema as Record<string, unknown> } },
+    });
+    const text = res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+      .map((b) => b.text)
+      .join('');
+    if (res.stop_reason === 'refusal') {
+      console.log('[llm] model declined to answer');
+      throw new NoAnswer('el modelo no quiso responder este mensaje');
+    }
+    if (res.stop_reason === 'max_tokens') {
+      console.log(`[llm] ran out of tokens at ${maxTokens}, retrying with more`);
+      maxTokens *= 2;
+      continue;
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      console.log(`[llm] unparseable answer (stop_reason=${res.stop_reason}): ${text.slice(0, 200)}`);
+      if (attempt === 0) continue;
+    }
+  }
+  throw new NoAnswer('no obtuve una respuesta válida del modelo');
 }
 
 export async function decide(
@@ -160,7 +182,7 @@ export async function decide(
   ];
 
   const input = await askJson<any>(
-    { model: config.model, max_tokens: 800, system, messages: [{ role: 'user', content }] },
+    { model: config.model, max_tokens: 1500, system, messages: [{ role: 'user', content }] },
     DECISION_SCHEMA,
   );
   switch (input.action) {

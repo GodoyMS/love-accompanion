@@ -6,7 +6,7 @@ import { canSend, cancelPending, getSettings, pauseFor, setEnabled } from '../se
 import { quietHoursEnd, rand } from '../time.js';
 import { wa, type Parsed } from '../wa/client.js';
 import { buildContext } from './context.js';
-import { decide } from './llm.js';
+import { decide, NoAnswer } from './llm.js';
 import { sttProvider, transcribe } from './transcribe.js';
 import { makeVoiceNote, voiceReady } from './voice.js';
 
@@ -89,7 +89,14 @@ async function think() {
     // She spoke to you → answer by voice (if enabled and your ElevenLabs voice is set up).
     const lastIn = ctx.pending[ctx.pending.length - 1];
     const byVoice = st.voiceReplies && voiceReady() && lastIn?.kind === 'audio';
-    const d = await decide(ctx, images, st.autonomy, undefined, byVoice);
+    let d: Awaited<ReturnType<typeof decide>>;
+    try {
+      d = await decide(ctx, images, st.autonomy, undefined, byVoice);
+    } catch (e) {
+      if (!(e instanceof NoAnswer)) throw e;
+      // No usable answer from the model: leave it to you rather than sending something broken.
+      d = { action: 'handoff', reason: e.message };
+    }
     console.log(`[think] decision: ${d.action}`);
     // She wrote while we were thinking: drop this answer, the next pass sees everything.
     if (rerun || version !== inboxVersion) {
