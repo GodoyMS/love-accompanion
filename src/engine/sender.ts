@@ -93,7 +93,7 @@ async function tick() {
     // Go "offline" a little later, like closing the app.
     offlineTimer = setTimeout(() => void wa.presence('unavailable').catch(() => {}), rand(15_000, 60_000));
   } catch (e) {
-    log.error(e, 'send failed');
+    console.log('[send] failed:', (e as Error)?.stack ?? e);
     await logEvent('error', `send: ${(e as Error).message}`);
   } finally {
     busy = false;

@@ -95,7 +95,9 @@ async function think() {
         break;
     }
   } catch (e) {
-    log.error(e, 'think failed');
+    console.log('[think] failed:', (e as Error)?.stack ?? e);
+    // Tell you right away instead of failing silently.
+    await wa.notifySelf(`No pude generar la respuesta: ${String((e as Error)?.message ?? e).slice(0, 300)}`);
     await logEvent('error', String((e as Error).message ?? e));
   } finally {
     generating = false;

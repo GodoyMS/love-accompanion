@@ -19,7 +19,7 @@ async function maybeRun() {
   try {
     await runMemoryExtraction(last ? new Date(last) : new Date(Date.now() - 3 * 86_400_000));
   } catch (e) {
-    log.error(e, 'memory job failed');
+    console.log('[memory] failed:', (e as Error)?.message ?? e);
   }
 }
 
