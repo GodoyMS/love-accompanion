@@ -495,7 +495,7 @@ function VoiceTuner({ voice, onChange }: { voice: Settings['voice']; onChange: (
         </select>
       </label>
       {slider('speed', 'Velocidad', 0.7, 1.2, '(menos = más pausado)')}
-      {slider('stability', 'Estabilidad', 0, 1, '(más = más calmado y parejo)')}
+      {slider('stability', 'Estabilidad', 0, 1, '(menos = más energía y emoción)')}
       {slider('similarity', 'Parecido a tu voz', 0, 1, '(más = conserva tu acento)')}
       {slider('style', 'Estilo', 0, 1, '(0 = neutral, más = más actuado)')}
       <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} />
