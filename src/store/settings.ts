@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   replyDelaySec: [5, 45],
   quietHours: null,
   handBackMinutes: 2,
-  voiceReplies: true,
+  voiceReplies: false, // text replies only; turn on in Ajustes to answer voice notes by voice
   autonomy: { feelings: true, health: true, conflicts: false, plans: false },
   // Warm and lively, close to your real voice.
   voice: { model: 'eleven_multilingual_v2', speed: 1.02, stability: 0.4, similarity: 0.85, style: 0.35 },
@@ -124,7 +124,7 @@ export function normalizeSettings(input: any, base: Settings = DEFAULT_SETTINGS)
 
 // ---------- persistence ----------
 
-const VERSION = 6;
+const VERSION = 7;
 const OLD_DOUBT = 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Ya le aviso para que te escriba él.';
 const OLD_DIRECT = 'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Ya le aviso para que te escriba él.';
 let cache: Settings | null = null;
@@ -152,6 +152,7 @@ export async function migrateSettings() {
     if (saved.disclosure.doubtText === OLD_DOUBT) saved.disclosure.doubtText = DEFAULT_SETTINGS.disclosure.doubtText;
     if (saved.disclosure.directText === OLD_DIRECT) saved.disclosure.directText = DEFAULT_SETTINGS.disclosure.directText;
   }
+  if (v < 7) saved.voiceReplies = false; // you asked: no more voice notes (re-enable in Ajustes)
   await kvSet('settings', { ...normalizeSettings(saved), _v: VERSION });
   cache = null;
 }

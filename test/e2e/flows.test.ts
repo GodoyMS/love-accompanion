@@ -201,7 +201,7 @@ describe('kill switch and pause', () => {
     brain.next({ action: 'reply', messages: ['uno', 'dos'] });
     wa.onPresence = async (p, sent) => {
       // You flip the switch while it's typing the second message.
-      if (p === 'composing' && sent === 1) await db.kvSet('settings', { ...(await settings.getSettings()), enabled: false, _v: 6 });
+      if (p === 'composing' && sent === 1) await db.kvSet('settings', { ...(await settings.getSettings()), enabled: false, _v: 7 });
     };
     await her('hola');
     await settle();
@@ -345,7 +345,7 @@ describe('sensitive moments', () => {
 });
 
 describe('voice', () => {
-  beforeEach(() => reset());
+  beforeEach(() => reset({ voiceReplies: true }));
 
   test('her voice note is transcribed and answered with a voice note (recording first)', async () => {
     brain.next((i) => ({ action: 'reply', messages: [i.voice ? 'te respondo hablando' : 'texto'] }));
@@ -365,7 +365,7 @@ describe('voice', () => {
   });
 
   test('a voice note followed by a text is still answered by voice', async () => {
-    await reset({ debounceSec: [0.3, 0.3] });
+    await reset({ debounceSec: [0.3, 0.3], voiceReplies: true });
     await her('[nota de voz 0:04]', { kind: 'audio' });
     await her('¿me escuchaste?');
     await settle();
@@ -558,6 +558,18 @@ describe('settings validation', () => {
     assert.equal(s.disclosure.doubtText, settings.DEFAULT_SETTINGS.disclosure.doubtText);
     assert.equal((s.disclosure as any).pauseHours, undefined);
     assert.equal((s as any).evil, undefined);
+  });
+
+  test('voice replies are off by default and turned off once for existing setups', async () => {
+    await reset();
+    assert.equal(settings.DEFAULT_SETTINGS.voiceReplies, false);
+    await db.kvSet('settings', { enabled: true, voiceReplies: true, _v: 6 });
+    await settings.migrateSettings();
+    assert.equal((await settings.reloadSettings()).voiceReplies, false);
+    // Turning it back on in Ajustes sticks across restarts.
+    await settings.updateSettings({ voiceReplies: true });
+    await settings.migrateSettings();
+    assert.equal((await settings.reloadSettings()).voiceReplies, true);
   });
 
   test('old saved settings are migrated once (sleep hours off, slow defaults replaced, livelier voice, no pause texts)', async () => {
