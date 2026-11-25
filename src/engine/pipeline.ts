@@ -22,6 +22,7 @@ export async function onPartnerMessage(p: Parsed, raw: WAMessage) {
     setTimeout(() => rawById.delete(p.waId), 30 * 60_000);
   }
   // She wrote again: anything queued but not yet sent is now stale — re-think with the full picture.
+  console.log(`[in] message from partner (${p.kind})`);
   await cancelPending('she wrote again');
   await scheduleThink();
 }
@@ -58,7 +59,9 @@ async function think() {
       )
     ).filter((x): x is NonNullable<typeof x> => !!x);
 
+    console.log(`[think] ${ctx.pending.length} unanswered message(s), asking Claude`);
     const d = await decide(ctx, images);
+    console.log(`[think] decision: ${d.action}`);
     if (rerun) return; // she wrote while we were thinking; the next pass will handle everything
 
     // The switch may have been flipped while Claude was thinking.
@@ -70,6 +73,7 @@ async function think() {
     const wake = quietHoursEnd(sendAt, s.quietHours);
     if (wake) sendAt = new Date(wake.getTime() + rand(5, 40) * 60_000);
 
+    if (d.action === 'reply' || d.action === 'react') console.log(`[think] scheduled for ${sendAt.toISOString()}`);
     const readKeys = JSON.stringify(ctx.pending.map((m) => m.raw_key).filter(Boolean));
 
     switch (d.action) {

@@ -89,6 +89,7 @@ async function tick() {
     await wa.presence('paused');
     await finish(job.id, 'sent');
     await logEvent('sent', parts.join(' | ') || job.reaction);
+    console.log(`[send] sent ${parts.length} message(s)${job.reaction ? ' + reaction' : ''}`);
 
     // Go "offline" a little later, like closing the app.
     offlineTimer = setTimeout(() => void wa.presence('unavailable').catch(() => {}), rand(15_000, 60_000));
