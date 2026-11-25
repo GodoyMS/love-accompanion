@@ -8,7 +8,9 @@
     "build": "tsc -p tsconfig.json && vite build --config web/vite.config.ts",
     "start": "node dist/app/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "npm run test:unit && npm run test:e2e",
+    "test:unit": "tsx --test test/*.test.ts",
+    "test:e2e": "tsx --test --test-concurrency=1 test/e2e/*.test.ts"
   },
   "repository": {
     "type": "git",

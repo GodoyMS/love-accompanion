@@ -375,8 +375,20 @@ function Import() {
 }
 
 function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () => void }) {
-  const [s, setS] = useState(settings);
+  const [s, setLocal] = useState(settings);
+  const [dirty, setDirty] = useState(false);
   const [msg, setMsg] = useState('');
+  const [saving, setSaving] = useState(false);
+  const setS = (next: Settings) => {
+    setLocal(next);
+    setDirty(true);
+    setMsg('');
+  };
+  // Keep in sync with the server (e.g. changed from WhatsApp) unless you're mid-edit.
+  const serverKey = JSON.stringify(settings);
+  useEffect(() => {
+    if (!dirty) setLocal(settings);
+  }, [serverKey, dirty]);
   const num = (v: string) => Math.max(0, Number(v) || 0);
   const pair = (k: 'debounceSec' | 'replyDelaySec', i: 0 | 1, v: string) => {
     const next = [...s[k]] as [number, number];
@@ -442,7 +454,27 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
         </label>
         <p className="muted small">El bot nunca niega que no eres tú ni inventa una excusa. Te avisa al mismo tiempo y vuelve con /start.</p>
       </fieldset>
-      <button className="primary" onClick={async () => { await api('/api/settings', { method: 'PUT', body: s }); setMsg('Guardado'); onSaved(); }}>Guardar</button>
+      <button
+        className="primary"
+        disabled={!dirty || saving}
+        onClick={async () => {
+          setSaving(true);
+          try {
+            // Only preferences: on/off and pause are never sent from here.
+            const { enabled: _e, pausedUntil: _p, ...prefs } = s;
+            setLocal(await api<Settings>('/api/settings', { method: 'PUT', body: prefs }));
+            setDirty(false);
+            setMsg('Guardado');
+            onSaved();
+          } catch (e) {
+            setMsg((e as Error).message);
+          } finally {
+            setSaving(false);
+          }
+        }}
+      >
+        {saving ? 'Guardando…' : dirty ? 'Guardar' : 'Guardado'}
+      </button>
       {msg && <span className="muted small"> {msg}</span>}
 
       <hr />
