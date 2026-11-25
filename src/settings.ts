@@ -37,8 +37,6 @@ export interface Settings {
     doubtText: string;
     /** She asks directly if it's a bot / AI / program. Never denied. */
     directText: string;
-    /** After telling her, the bot stays paused this long (or until you /start). */
-    pauseHours: number;
   };
 }
 
@@ -63,12 +61,11 @@ export const DEFAULT_SETTINGS: Settings = {
   handBackMinutes: 2,
   voiceReplies: true,
   autonomy: { feelings: true, health: true, conflicts: false, plans: false },
-  // Calm, unhurried, neutral: slower than default, steady, close to your real voice, no dramatization.
+  // Warm and lively, close to your real voice.
   voice: { model: 'eleven_multilingual_v2', speed: 1.02, stability: 0.4, similarity: 0.85, style: 0.35 },
   disclosure: {
-    doubtText: 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Ya le aviso para que te escriba él.',
-    directText: 'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Ya le aviso para que te escriba él.',
-    pauseHours: 12,
+    doubtText: 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Igual aquí sigo para acompañarte.',
+    directText: 'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Igual aquí sigo para acompañarte.',
   },
 };
 
@@ -98,6 +95,16 @@ export async function getSettings(): Promise<Settings> {
       // The calm/neutral voice sounded flat and dry: more energy and expression (keeps your model).
       if (saved.voice) saved.voice = { ...saved.voice, speed: 1.02, stability: 0.4, similarity: 0.85, style: 0.35 };
       saved._v = 5;
+    }
+    if ((saved._v ?? 0) < 6 && Object.keys(saved).length) {
+      // The bot never pauses on its own any more (only /stop, /pause or the panel switch),
+      // so drop the post-disclosure pause and the "ya le aviso" promise from the old default texts.
+      if (saved.disclosure) {
+        delete (saved.disclosure as any).pauseHours;
+        if (saved.disclosure.doubtText === 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Ya le aviso para que te escriba él.') saved.disclosure.doubtText = 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Igual aquí sigo para acompañarte.';
+        if (saved.disclosure.directText === 'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Ya le aviso para que te escriba él.') saved.disclosure.directText = 'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Igual aquí sigo para acompañarte.';
+      }
+      saved._v = 6;
       await kvSet('settings', saved);
     }
     cache = {
@@ -112,7 +119,7 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...(await getSettings()), ...patch, _v: 5 };
+  const next = { ...(await getSettings()), ...patch, _v: 6 };
   await kvSet('settings', next);
   cache = next;
   return next;

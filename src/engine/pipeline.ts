@@ -207,7 +207,7 @@ async function think() {
         );
         await logEvent('disclose', d.reason);
         await wa.notifySelf(
-          `Ella ${d.direct ? 'preguntó si es un bot' : 'dudó de que fueras tú'}: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\n\nLe voy a decir: "${text}"\n\nDespués quedo en pausa ${st.disclosure.pauseHours} h. Escríbele tú; cuando quieras que vuelva, mándame /start.`,
+          `Ella ${d.direct ? 'preguntó si es un bot' : 'dudó de que fueras tú'}: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\n\nLe voy a decir: "${text}"\n\nSigo respondiéndole normalmente. Si quieres que pare, mándame /stop o /pause.`,
         );
         break;
       }
@@ -326,9 +326,11 @@ export async function resumeOnBoot() {
     );
     if (r.rowCount) console.log(`[boot] brought forward ${r.rowCount} reply(ies) parked for sleep hours`);
   }
-  // Older versions auto-paused when you typed; lift that kind of pause (never a manual one).
+  // Older versions paused on their own (when you typed, or after telling her it wasn't you);
+  // lift that kind of pause, never one you set yourself.
   const lastPause = await q(`select detail from events where type = 'paused' order by ts desc limit 1`);
-  if (String(lastPause.rows[0]?.detail ?? '').includes('escribiste tú')) {
+  const lastPauseWhy = String(lastPause.rows[0]?.detail ?? '');
+  if (lastPauseWhy.includes('escribiste tú') || lastPauseWhy.includes('no eras tú')) {
     const { updateSettings } = await import('../settings.js');
     await updateSettings({ pausedUntil: null });
     console.log('[boot] lifted the old auto-pause');
