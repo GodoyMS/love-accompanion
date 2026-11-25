@@ -23,8 +23,19 @@ export async function importExport(text: string, me?: string) {
 
   const client = await pool.connect();
   let inserted = 0;
+  let replaced = 0;
   try {
     await client.query('begin');
+    // A new import replaces what an earlier import put in the same period: re-importing with a
+    // different "who are you" choice, or another export of the same chat, must never double it.
+    // Messages that came from WhatsApp itself (live / history sync) are kept.
+    const times = lines.map((l) => fromLocal(l.y, l.mo, l.d, l.h, l.mi, l.s).getTime());
+    const del = await client.query(
+      `delete from messages where source = 'import' and wa_id is null
+         and ts between $1::timestamptz - interval '2 minutes' and $2::timestamptz + interval '2 minutes'`,
+      [new Date(Math.min(...times)), new Date(Math.max(...times))],
+    );
+    replaced = del.rowCount ?? 0;
     for (const l of lines) {
       const r = await client.query(
         // Skip anything already there (re-imports, or messages that came in via WhatsApp history sync).
@@ -48,5 +59,5 @@ export async function importExport(text: string, me?: string) {
     client.release();
   }
   const style = await computeStyle();
-  return { needsSender: false as const, total: lines.length, inserted, style };
+  return { needsSender: false as const, total: lines.length, inserted, replaced, style };
 }

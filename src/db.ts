@@ -78,6 +78,15 @@ create table if not exists events (
 
 export async function migrate() {
   await pool.query(SCHEMA);
+  // Self-heal: drop imported copies of a message that's already there (from WhatsApp itself,
+  // or from an earlier import with the same sender, body and time).
+  const d = await pool.query(`
+    delete from messages a using messages b
+    where a.source = 'import' and a.wa_id is null and b.id <> a.id
+      and b.from_me = a.from_me and b.body = a.body
+      and b.ts between a.ts - interval '90 seconds' and a.ts + interval '90 seconds'
+      and (b.wa_id is not null or b.id < a.id)`);
+  if (d.rowCount) console.log(`[db] removed ${d.rowCount} duplicated imported message(s)`);
 }
 
 /**

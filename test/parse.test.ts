@@ -37,3 +37,9 @@ test('english US month/day order and 24h', () => {
   const { lines } = parseExport(txt);
   assert.deepEqual([lines[0].mo, lines[0].d, lines[0].h], [11, 24, 22]);
 });
+
+test('media placeholders with angle brackets are normalized', async () => {
+  const { parseExport } = await import('../src/importer/parse.ts');
+  const { lines } = parseExport('25/11/26, 12:23 a. m. - Ella: <sticker omitido>\n25/11/26, 12:24 a. m. - Ella: <imagen omitida>');
+  assert.deepEqual(lines.map((l) => l.body), ['[sticker]', '[foto]']);
+});
