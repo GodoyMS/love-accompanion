@@ -12,7 +12,7 @@ type Settings = {
 type Status = {
   settings: Settings;
   paused: boolean;
-  wa: { connected: boolean; me: string | null; qr: string | null };
+  wa: { connected: boolean; me: string | null; qr: string | null; status: string };
   partner: string | null;
   missing: string[];
   pending: { id: number; send_at: string; parts: string[]; reaction: string | null }[];
@@ -52,7 +52,7 @@ export function App() {
       <header className="top">
         <span className="brand">love-accompanion</span>
         <span className={`pill ${status.wa.connected ? 'ok' : 'warn'}`}>
-          {status.wa.connected ? `WhatsApp +${status.wa.me?.split('@')[0]}` : 'WhatsApp desconectado'}
+          {status.wa.connected ? `WhatsApp +${status.wa.me?.split('@')[0]}` : `WhatsApp: ${status.wa.status}`}
         </span>
       </header>
 

@@ -27,7 +27,10 @@ async function main() {
   console.log('whatsapp lock acquired');
 
   await recoverStuck();
-  await wa.start({ onPartnerMessage, onManualReply, onSelfCommand });
+  await wa.start({ onPartnerMessage, onManualReply, onSelfCommand }).catch((e) => {
+    console.log('[wa] start failed:', e?.message ?? e);
+    wa.lastStatus = `error al iniciar: ${e?.message ?? e}`;
+  });
   startSender();
   startMemoryJob();
   setTimeout(() => void resumeOnBoot(), 30_000);

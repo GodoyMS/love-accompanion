@@ -77,7 +77,7 @@ export async function buildServer() {
       return {
         settings: s,
         paused: !!s.pausedUntil && new Date(s.pausedUntil) > new Date(),
-        wa: { connected: wa.connected, me: wa.me.pn, qr: wa.qrDataUrl },
+        wa: { connected: wa.connected, me: wa.me.pn, qr: wa.qrDataUrl, status: wa.lastStatus },
         partner: config.partnerNumber ? `+${config.partnerNumber}` : null,
         missing: missingConfig,
         pending: pending.rows,

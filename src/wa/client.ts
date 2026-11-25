@@ -49,6 +49,7 @@ class WhatsApp {
   private handler!: Handler;
   private stopping = false;
   private retries = 0;
+  lastStatus = 'iniciando…';
 
   async start(handler: Handler) {
     this.handler = handler;
@@ -60,7 +61,16 @@ class WhatsApp {
 
   private async connect() {
     const { state, saveCreds, clear } = await usePgAuthState();
-    const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined as any }));
+    const latest = await Promise.race([
+      fetchLatestBaileysVersion(),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 8_000)),
+    ]).catch((e) => {
+      console.log('[wa] could not fetch latest WA version, using bundled one:', e?.message);
+      return { version: undefined as any };
+    });
+    const version = latest.version;
+    console.log(`[wa] connecting (registered=${!!state.creds.registered}, version=${version?.join('.') ?? 'bundled'})`);
+    this.lastStatus = 'conectando…';
 
     const sock = makeWASocket({
       version,
@@ -78,6 +88,8 @@ class WhatsApp {
     sock.ev.on('connection.update', async (u) => {
       if (u.qr) {
         this.qrDataUrl = await QRCode.toDataURL(u.qr, { margin: 1, width: 320 });
+        this.lastStatus = 'esperando que escanees el QR';
+        console.log('[wa] new QR available in the panel');
       }
       if (u.connection === 'open') {
         this.connected = true;
@@ -87,13 +99,19 @@ class WhatsApp {
           pn: sock.user?.id ? jidNormalizedUser(sock.user.id) : null,
           lid: sock.user?.lid ? jidNormalizedUser(sock.user.lid) : null,
         };
+        this.lastStatus = 'conectado';
+        console.log(`[wa] connected as ${this.me.pn}`);
         await this.learnPartnerLid();
         await logEvent('wa_connected', this.me.pn ?? undefined);
       }
       if (u.connection === 'close') {
         this.connected = false;
-        const code = (u.lastDisconnect?.error as any)?.output?.statusCode;
-        await logEvent('wa_closed', String(code));
+        const err = u.lastDisconnect?.error as any;
+        const code = err?.output?.statusCode;
+        const reason = `${code ?? '?'} ${err?.message ?? ''}`.trim();
+        this.lastStatus = `desconectado: ${reason}`;
+        console.log(`[wa] connection closed: ${reason}`);
+        await logEvent('wa_closed', reason);
         if (this.stopping) return;
         if (code === DisconnectReason.loggedOut) {
           await clear();
@@ -109,7 +127,15 @@ class WhatsApp {
           code === DisconnectReason.restartRequired || code === DisconnectReason.loggedOut
             ? 500
             : Math.min(60_000, 2_000 * 2 ** Math.min(this.retries, 5));
-        setTimeout(() => this.connect().catch((e) => log.error(e)), wait);
+        console.log(`[wa] reconnecting in ${Math.round(wait / 1000)}s`);
+        setTimeout(
+          () =>
+            this.connect().catch((e) => {
+              console.log('[wa] connect failed:', e?.message ?? e);
+              this.lastStatus = `error: ${e?.message ?? e}`;
+            }),
+          wait,
+        );
       }
     });
 
