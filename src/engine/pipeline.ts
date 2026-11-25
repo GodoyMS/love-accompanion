@@ -262,6 +262,7 @@ export async function onSelfCommand(text: string) {
 export async function resumeOnBoot() {
   // Replies parked for "sleep hours" that are now turned off: send them soon instead of hours later.
   const s0 = await getSettings();
+  console.log(`[boot] bot ${s0.enabled ? 'ON' : 'OFF'}, sleep hours: ${s0.quietHours ? s0.quietHours.join('-') + 'h' : 'off'}, timing: wait ${s0.debounceSec.join('-')}s + ${s0.replyDelaySec.join('-')}s`);
   if (!s0.quietHours) {
     const r = await q(
       `update pending_replies set send_at = now() + (random() * interval '40 seconds') + interval '5 seconds'

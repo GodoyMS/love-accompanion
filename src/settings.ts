@@ -49,9 +49,12 @@ export async function getSettings(): Promise<Settings> {
       if (String(saved.debounceSec) === '20,60') delete saved.debounceSec; // old slow defaults
       if (String(saved.replyDelaySec) === '10,120') delete saved.replyDelaySec;
       delete (saved as any).takeoverMinutes; // replaced by handBackMinutes (no more auto-pause)
-      const qh = saved.quietHours as any; // old default 1–7, or half-cleared by the old form → off
-      if (Array.isArray(qh) && (String(qh) === '1,7' || qh[1] === 0)) saved.quietHours = null;
       saved._v = 2;
+    }
+    if ((saved._v ?? 0) < 3 && Object.keys(saved).length) {
+      // Sleep hours were on by default before; you asked for "always there", so start from off.
+      saved.quietHours = null;
+      saved._v = 3;
       await kvSet('settings', saved);
     }
     cache = { ...DEFAULT_SETTINGS, ...saved, autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) } };
@@ -60,7 +63,7 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...(await getSettings()), ...patch, _v: 2 };
+  const next = { ...(await getSettings()), ...patch, _v: 3 };
   await kvSet('settings', next);
   cache = next;
   return next;
