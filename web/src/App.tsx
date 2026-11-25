@@ -343,7 +343,7 @@ function Import() {
       if (r.needsSender) setSenders(r.senders);
       else {
         setSenders(null);
-        setResult(`Listo: ${r.inserted} mensajes nuevos de ${r.total} en el archivo.`);
+        setResult(`Listo: ${r.inserted} mensajes de ${r.total} en el archivo${r.replaced ? ` (reemplazó ${r.replaced} de una importación anterior)` : ''}.`);
       }
     } catch (e) {
       setResult((e as Error).message);
@@ -357,7 +357,7 @@ function Import() {
       <h2>Importar historial</h2>
       <ol className="muted small steps">
         <li>En WhatsApp abre el chat con ella → ⋮ / nombre → Más → <b>Exportar chat</b> → <b>Sin archivos</b>.</li>
-        <li>Sube aquí el .txt o .zip. Puedes volver a importarlo cuando quieras: no duplica.</li>
+        <li>Sube aquí el .txt o .zip. Puedes volver a importarlo cuando quieras: cada importación reemplaza la anterior en esas fechas, así que si elegiste mal tu nombre, vuelve a subirlo y elige bien.</li>
       </ol>
       <input type="file" accept=".txt,.zip" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setSenders(null); setResult(''); }} />
       {!senders && <button className="primary" disabled={!file || busy} onClick={() => send()}>{busy ? 'Leyendo…' : 'Subir'}</button>}

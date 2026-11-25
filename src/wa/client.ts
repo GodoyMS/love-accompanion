@@ -413,6 +413,12 @@ export async function storeMessage(p: Parsed, sentBy: 'human' | 'bot', source: '
      on conflict (wa_id) do nothing`,
     [p.waId, p.fromMe, sentBy, p.kind, p.body, p.ts, JSON.stringify(p.key), source],
   );
+  // The real WhatsApp message wins over the same one from an imported .txt.
+  await q(
+    `delete from messages where source = 'import' and wa_id is null and from_me = $1 and body = $2
+       and ts between $3::timestamptz - interval '90 seconds' and $3::timestamptz + interval '90 seconds'`,
+    [p.fromMe, p.body, p.ts],
+  );
 }
 
 export const wa = new WhatsApp();
