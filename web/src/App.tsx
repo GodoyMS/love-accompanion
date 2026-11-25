@@ -11,7 +11,7 @@ type Settings = {
   voiceReplies: boolean;
   autonomy: { feelings: boolean; health: boolean; conflicts: boolean; plans: boolean };
   voice: { model: string; speed: number; stability: number; similarity: number; style: number };
-  disclosure: { doubtText: string; directText: string; pauseHours: number };
+  disclosure: { doubtText: string; directText: string };
 };
 type Status = {
   settings: Settings;
@@ -437,10 +437,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
         <label>Cuando pregunta directamente si es un bot o una IA
           <textarea rows={3} value={s.disclosure.directText} onChange={(e) => setS({ ...s, disclosure: { ...s.disclosure, directText: e.target.value } })} />
         </label>
-        <label>Después queda en pausa (horas)
-          <input type="number" value={s.disclosure.pauseHours} onChange={(e) => setS({ ...s, disclosure: { ...s.disclosure, pauseHours: num(e.target.value) } })} />
-        </label>
-        <p className="muted small">El bot nunca niega que no eres tú ni inventa una excusa. Te avisa al mismo tiempo y vuelve con /start.</p>
+        <p className="muted small">El bot nunca niega que no eres tú ni inventa una excusa. Te avisa y sigue respondiendo; solo se pausa si tú lo pides (/stop, /pause o el interruptor).</p>
       </fieldset>
       <button className="primary" onClick={async () => { await api('/api/settings', { method: 'PUT', body: s }); setMsg('Guardado'); onSaved(); }}>Guardar</button>
       {msg && <span className="muted small"> {msg}</span>}
