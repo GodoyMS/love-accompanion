@@ -1,17 +1,8 @@
-import { kvGet, q } from '../db.js';
-import { localStamp } from '../time.js';
 import type { StyleProfile } from '../importer/style.js';
-
-export interface Turn {
-  id: number;
-  from_me: boolean;
-  sent_by: string;
-  kind: string;
-  body: string;
-  ts: Date;
-  wa_id: string | null;
-  raw_key: any;
-}
+import { kvGet, q } from '../store/db.js';
+import { recentTurns, unanswered } from '../store/messages.js';
+import type { Context } from './ports.js';
+import { localStamp } from './time.js';
 
 export const DEFAULT_PROFILE = `# Quién soy yo
 - Nombre:
@@ -35,25 +26,6 @@ export const DEFAULT_PROFILE = `# Quién soy yo
 # Reglas extra para el bot
 -
 `;
-
-/** Her messages since your last message: what needs an answer. */
-export async function unansweredMessages(): Promise<Turn[]> {
-  const r = await q<Turn>(
-    `select * from messages
-     where not from_me and kind <> 'reaction'
-       and ts > coalesce((select max(ts) from messages where from_me), 'epoch')
-     order by ts asc`,
-  );
-  return r.rows;
-}
-
-async function recentTurns(limit = 60): Promise<Turn[]> {
-  const r = await q<Turn>(
-    `select * from (select * from messages where kind <> 'reaction' order by ts desc limit $1) t order by ts asc`,
-    [limit],
-  );
-  return r.rows;
-}
 
 /** Past situations similar to the current one, with how you actually answered. */
 async function fewShot(query: string, excludeAfter: Date, n = 6) {
@@ -103,7 +75,8 @@ async function myVoiceSample(n = 25) {
   return r.rows.map((x) => x.body);
 }
 
-export async function buildContext() {
+/** Everything Claude needs to answer her unanswered messages. */
+export async function buildContext(): Promise<Context> {
   const [profile, style, memories, recent, pending] = await Promise.all([
     kvGet<string>('profile', DEFAULT_PROFILE),
     kvGet<StyleProfile | null>('style', null),
@@ -113,7 +86,7 @@ export async function buildContext() {
        order by created_at desc limit 120`,
     ),
     recentTurns(),
-    unansweredMessages(),
+    unanswered(),
   ]);
   const lastText = pending.map((p) => p.body).join(' ');
   const [examples, voice] = await Promise.all([

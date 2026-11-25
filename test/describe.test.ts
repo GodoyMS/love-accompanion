@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { describe } from '../src/wa/describe.ts';
+import { describe } from '../src/adapters/whatsapp/describe.ts';
 
 const thumb = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 

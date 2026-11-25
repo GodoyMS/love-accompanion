@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { speakable, toVoiceNote, waveformFromPcm } from '../src/engine/voice.ts';
+import { speakable, toVoiceNote, waveformFromPcm } from '../src/adapters/voice.ts';
 
 test('speakable strips emojis and chat shorthand', () => {
   assert.equal(speakable('ay amor 🥹❤️ q pasó? xq no me dijiste, tb te extraño'), 'ay amor que pasó? porque no me dijiste, también te extraño');
@@ -27,7 +27,7 @@ test('mp3 becomes a WhatsApp voice note: ogg/opus mono 48k with duration', async
 });
 
 test('tts sends the calm/neutral tuning to ElevenLabs', async () => {
-  const { tts } = await import('../src/engine/voice.ts');
+  const { tts } = await import('../src/adapters/voice.ts');
   process.env.ELEVENLABS_API_KEY = 'el';
   process.env.ELEVENLABS_VOICE_ID = 'VOICE';
   let seen: any;

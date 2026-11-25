@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
-import { sttProvider, transcribe } from '../src/engine/transcribe.ts';
+import { sttProvider, transcribe } from '../src/adapters/stt.ts';
 
 const realFetch = globalThis.fetch;
 afterEach(() => {

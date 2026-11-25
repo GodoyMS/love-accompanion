@@ -1,6 +1,6 @@
 import { unzipSync, strFromU8 } from 'fflate';
-import { pool } from '../db.js';
-import { fromLocal } from '../time.js';
+import { fromLocal } from '../core/time.js';
+import { pool } from '../store/db.js';
 import { kindOf, parseExport } from './parse.js';
 import { computeStyle } from './style.js';
 
@@ -39,8 +39,9 @@ export async function importExport(text: string, me?: string) {
     for (const l of lines) {
       const r = await client.query(
         // Skip anything already there (re-imports, or messages that came in via WhatsApp history sync).
-        `insert into messages (from_me, sent_by, kind, body, ts, source)
-         select $1, 'import', $2, $3, $4::timestamptz, 'import'
+        // received_at = ts: imported history must never look like a new message to answer.
+        `insert into messages (from_me, sent_by, kind, body, ts, received_at, source)
+         select $1, 'import', $2, $3, $4::timestamptz, $4::timestamptz, 'import'
          where not exists (
            select 1 from messages
            where from_me = $1 and body = $3

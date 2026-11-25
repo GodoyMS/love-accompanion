@@ -4,7 +4,10 @@ import { test } from 'node:test';
 process.env.DATABASE_URL ??= 'postgres://x@localhost/x';
 process.env.ADMIN_PASSWORD ??= 'x';
 process.env.ANTHROPIC_API_KEY = 'test';
-const { extractMemories, decide, NoAnswer } = await import('../src/engine/llm.ts');
+const { claudeBrain } = await import('../src/adapters/claude.ts');
+const { NoAnswer } = await import('../src/core/ports.ts');
+const extractMemories = claudeBrain.remember;
+const decide = (ctx: any, images: any[], autonomy: any) => claudeBrain.decide({ ctx, images, autonomy, voice: false, disclosed: false });
 
 // The SDK keeps the fetch it saw first, so install one mock that reads a mutable queue.
 let queue: { text: string; stop: string }[] = [];

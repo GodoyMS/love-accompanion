@@ -6,16 +6,17 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import fstatic from '@fastify/static';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
-import { config, missingConfig } from './config.js';
-import { kvGet, kvSet, q } from './db.js';
-import { DEFAULT_PROFILE, describeStyle } from './engine/context.js';
-import { runMemoryExtraction } from './engine/memory.js';
-import { sttProvider } from './engine/transcribe.js';
-import { speakable, tts, voiceReady } from './engine/voice.js';
-import { importExport, readExportFile } from './importer/import.js';
-import { computeStyle, type StyleProfile } from './importer/style.js';
-import { cancelPending, getSettings, pauseFor, setEnabled, updateSettings, type Settings } from './settings.js';
-import { wa } from './wa/client.js';
+import { sttProvider } from '../adapters/stt.js';
+import { speakable, tts, voiceReady } from '../adapters/voice.js';
+import { wa } from '../adapters/whatsapp/client.js';
+import { config, missingConfig } from '../config.js';
+import { DEFAULT_PROFILE, describeStyle } from '../core/context.js';
+import { runMemoryExtraction } from '../core/memory.js';
+import { importExport, readExportFile } from '../importer/import.js';
+import { computeStyle, type StyleProfile } from '../importer/style.js';
+import { kvGet, kvSet, q } from '../store/db.js';
+import * as replies from '../store/replies.js';
+import { getSettings, isPaused, normalizeSettings, pauseFor, resume, setEnabled, updateSettings, type Settings } from '../store/settings.js';
 
 const COOKIE = 'la_session';
 const sign = (v: string) => createHmac('sha256', config.sessionSecret).update(v).digest('hex');
@@ -42,15 +43,21 @@ export async function buildServer() {
   app.get('/healthz', async () => ({ ok: true }));
 
   // ---------- auth ----------
-  let failures = 0;
+  // Per-IP throttle: a stranger guessing can't lock you out of your own panel.
+  const attempts = new Map<string, { n: number; until: number }>();
   app.post<{ Body: { password?: string } }>('/api/login', async (req, reply) => {
-    if (failures > 20) return reply.code(429).send({ error: 'too many attempts, restart the service' });
+    const now = Date.now();
+    const a = attempts.get(req.ip);
+    if (a && a.until > now && a.n >= 10) {
+      return reply.code(429).send({ error: 'Demasiados intentos. Espera 15 minutos.' });
+    }
     if (!safeEqual(String(req.body?.password ?? ''), config.adminPassword)) {
-      failures++;
+      const prev = a && a.until > now ? a.n : 0;
+      attempts.set(req.ip, { n: prev + 1, until: now + 15 * 60_000 });
       await new Promise((r) => setTimeout(r, 800));
       return reply.code(401).send({ error: 'contraseña incorrecta' });
     }
-    failures = 0;
+    attempts.delete(req.ip);
     const exp = String(Date.now() + 30 * 86_400_000);
     reply.setCookie(COOKIE, `${exp}.${sign(exp)}`, {
       httpOnly: true, sameSite: 'strict', secure: req.protocol === 'https', path: '/', maxAge: 30 * 86_400,
@@ -69,7 +76,7 @@ export async function buildServer() {
     api.get('/api/status', async () => {
       const s = await getSettings();
       const [pending, counts, events] = await Promise.all([
-        q(`select id, send_at, parts, reaction, voice is not null as is_voice from pending_replies where status = 'pending' order by send_at`),
+        replies.listPending(),
         q(`select count(*)::int total,
                   count(*) filter (where sent_by = 'bot')::int by_bot,
                   min(ts) first_ts
@@ -78,13 +85,13 @@ export async function buildServer() {
       ]);
       return {
         settings: s,
-        paused: !!s.pausedUntil && new Date(s.pausedUntil) > new Date(),
+        paused: isPaused(s),
         wa: { connected: wa.connected, me: wa.me.pn, qr: wa.qrDataUrl, status: wa.lastStatus },
         partner: config.partnerNumber ? `+${config.partnerNumber}` : null,
         missing: missingConfig,
         stt: sttProvider(),
         voice: voiceReady(),
-        pending: pending.rows,
+        pending,
         counts: counts.rows[0],
         events: events.rows,
       };
@@ -96,24 +103,36 @@ export async function buildServer() {
     });
 
     api.post<{ Body: { minutes: number } }>('/api/pause', async (req) => {
-      await pauseFor(Math.max(1, Number(req.body.minutes) || 60), 'panel');
+      await pauseFor(Math.min(7 * 24 * 60, Math.max(1, Math.round(Number(req.body?.minutes)) || 60)), 'panel');
       return getSettings();
     });
 
-    api.post('/api/resume', async () => updateSettings({ pausedUntil: null }));
-
-    api.delete<{ Params: { id: string } }>('/api/pending/:id', async (req) => {
-      await q(`update pending_replies set status = 'cancelled', reason = 'panel' where id = $1 and status = 'pending'`, [req.params.id]);
-      return { ok: true };
-    });
-    api.delete('/api/pending', async () => ({ cancelled: await cancelPending('panel') }));
-    api.post<{ Params: { id: string } }>('/api/pending/:id/now', async (req) => {
-      await q(`update pending_replies set send_at = now() where id = $1 and status = 'pending'`, [req.params.id]);
-      return { ok: true };
+    api.post('/api/resume', async () => {
+      await resume('panel');
+      return getSettings();
     });
 
+    const idParam = (id: string) => {
+      const n = Number(id);
+      return Number.isInteger(n) && n > 0 ? n : null;
+    };
+    api.delete<{ Params: { id: string } }>('/api/pending/:id', async (req, reply) => {
+      const id = idParam(req.params.id);
+      if (!id) return reply.code(400).send({ error: 'id inválido' });
+      await replies.cancelOne(id, 'panel');
+      return { ok: true };
+    });
+    api.delete('/api/pending', async () => ({ cancelled: await replies.cancelPending('panel') }));
+    api.post<{ Params: { id: string } }>('/api/pending/:id/now', async (req, reply) => {
+      const id = idParam(req.params.id);
+      if (!id) return reply.code(400).send({ error: 'id inválido' });
+      await replies.sendNow(id);
+      return { ok: true };
+    });
+
+    // Only preferences here; on/off and pause have their own endpoints (and audit trail).
     api.put<{ Body: Partial<Settings> }>('/api/settings', async (req) => {
-      const { enabled: _e, pausedUntil: _p, ...rest } = req.body ?? {};
+      const { enabled: _e, pausedUntil: _p, ...rest } = (req.body ?? {}) as Partial<Settings>;
       return updateSettings(rest);
     });
 
@@ -135,7 +154,7 @@ export async function buildServer() {
       };
     });
     api.put<{ Body: { profile: string } }>('/api/profile', async (req) => {
-      await kvSet('profile', String(req.body.profile ?? ''));
+      await kvSet('profile', String(req.body?.profile ?? '').slice(0, 20_000));
       return { ok: true };
     });
     api.post('/api/style/recompute', async () => {
@@ -146,8 +165,10 @@ export async function buildServer() {
     api.get('/api/memories', async () =>
       (await q(`select * from memories where expires_at is null or expires_at > now() order by created_at desc`)).rows,
     );
-    api.post<{ Body: { fact: string } }>('/api/memories', async (req) => {
-      await q(`insert into memories (fact, source) values ($1, 'manual')`, [String(req.body.fact).trim()]);
+    api.post<{ Body: { fact: string } }>('/api/memories', async (req, reply) => {
+      const fact = String(req.body?.fact ?? '').trim().slice(0, 500);
+      if (!fact) return reply.code(400).send({ error: 'vacío' });
+      await q(`insert into memories (fact, source) values ($1, 'manual')`, [fact]);
       return { ok: true };
     });
     api.delete<{ Params: { id: string } }>('/api/memories/:id', async (req) => {
@@ -179,7 +200,9 @@ export async function buildServer() {
       if (!voiceReady()) return reply.code(400).send({ error: 'Falta ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID' });
       const text = speakable(String(req.body?.text || 'Hola amor, ¿cómo estás? Aquí estoy, tranquilo, pensando en ti.')).slice(0, 400);
       try {
-        const mp3 = await tts(text, req.body?.voice ?? (await getSettings()).voice);
+        const s = await getSettings();
+        const tuning = req.body?.voice ? normalizeSettings({ ...s, voice: req.body.voice }, s).voice : s.voice;
+        const mp3 = await tts(text, tuning);
         return reply.type('audio/mpeg').send(mp3);
       } catch (e) {
         return reply.code(502).send({ error: (e as Error).message });

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import type { VoiceTuning } from '../settings.js';
+import type { VoiceTuning } from '../store/settings.js';
 
 /**
  * Voice-note replies: ElevenLabs text-to-speech in your voice, converted with ffmpeg to the
@@ -25,7 +25,7 @@ export function speakable(text: string) {
 const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number(x) || 0));
 
 export async function tts(text: string, tuning?: VoiceTuning): Promise<Buffer> {
-  const v = tuning ?? (await (await import('../settings.js')).getSettings()).voice;
+  const v = tuning ?? (await (await import('../store/settings.js')).getSettings()).voice;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId()}?output_format=mp3_44100_128`;
   const res = await fetch(url, {
     method: 'POST',
