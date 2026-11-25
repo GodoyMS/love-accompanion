@@ -47,6 +47,34 @@ describe('replying', () => {
     assert.deepEqual(brain.last.ctx.pending.map((t) => t.body), ['primero', 'segundo']);
   });
 
+  test('two passes over the same messages (e.g. restart check + her message) answer only once', async () => {
+    await reset({ debounceSec: [0.3, 0.3], replyDelaySec: [600, 600] });
+    let release!: () => void;
+    brain.gate = new Promise((r) => (release = r));
+    await her('hola');
+    await new Promise((r) => setTimeout(r, 400)); // first pass is thinking, blocked
+    await conversation.kick('restart', 2); // the boot check runs before that reply is queued
+    brain.gate = null;
+    release(); // first pass queues its reply; the boot check's timer fires afterwards
+    await new Promise((r) => setTimeout(r, 600));
+    await settle();
+    const q = await queue();
+    assert.equal(q.filter((r) => r.status === 'pending').length, 1, 'exactly one reply on its way');
+    assert.equal(brain.inputs.length, 1);
+  });
+
+  test('a reply being sent when she writes again does not stop the new message from being answered', async () => {
+    await reset({ replyDelaySec: [600, 600] });
+    await her('uno');
+    await settle();
+    await db.q(`update pending_replies set status = 'sending'`); // dispatcher is mid-typing
+    await her('dos');
+    await settle();
+    const q = await queue();
+    assert.equal(q.length, 2, 'her new message got its own reply');
+    assert.deepEqual(brain.last.ctx.pending.map((t) => t.body), ['uno', 'dos']);
+  });
+
   test('a queued reply is cancelled when she writes again before it goes out', async () => {
     await reset({ replyDelaySec: [600, 600] }); // replies wait 10 min
     brain.next({ action: 'reply', messages: ['A'] }, { action: 'reply', messages: ['B'] });
