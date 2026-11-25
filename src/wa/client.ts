@@ -18,7 +18,8 @@ import { config, partnerPnJid } from '../config.js';
 import { kvGet, kvSet, logEvent, q } from '../db.js';
 import { usePgAuthState } from './auth.js';
 
-export type IncomingKind = 'text' | 'image' | 'audio' | 'sticker' | 'reaction' | 'other';
+import { describe, type IncomingKind } from './describe.js';
+export type { IncomingKind };
 
 export interface Parsed {
   waId: string;
@@ -27,10 +28,16 @@ export interface Parsed {
   body: string;
   ts: Date;
   key: WAMessageKey;
+  /** True when there's something Claude can look at (photo, sticker, video thumbnail, link preview). */
+  hasVisual: boolean;
 }
 
 type Handler = {
   onPartnerMessage: (m: Parsed, raw: WAMessage) => void | Promise<void>;
+  /** She edited or deleted a message: whatever was queued may be wrong now. */
+  onPartnerChanged: () => void | Promise<void>;
+  /** She called and nobody picked up. */
+  onMissedCall: (isVideo: boolean) => void | Promise<void>;
   onManualReply: (m: Parsed) => void | Promise<void>;
   onSelfCommand: (text: string) => void | Promise<void>;
 };
@@ -168,6 +175,14 @@ class WhatsApp {
       if (n) await logEvent('history_sync', `${n} messages`);
     });
 
+    sock.ev.on('messages.update', async (updates) => {
+      for (const u of updates) await this.onUpdate(u as any).catch((e) => console.log('[wa] update failed:', e?.message));
+    });
+
+    sock.ev.on('call', async (calls) => {
+      for (const c of calls) await this.onCall(c as any).catch((e) => console.log('[wa] call failed:', e?.message));
+    });
+
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       if (type !== 'notify' && type !== 'append') return;
       for (const raw of messages) {
@@ -178,6 +193,48 @@ class WhatsApp {
         }
       }
     });
+  }
+
+  private async onUpdate(u: { key: WAMessageKey; update: any }) {
+    if (!u.key?.id || u.key.fromMe || !this.isPartnerChat(u.key)) return;
+    const edited = u.update?.message?.editedMessage?.message;
+    if (edited) {
+      const d = describe(edited);
+      if (!d) return;
+      const r = await q(`update messages set body = $2 where wa_id = $1`, [u.key.id, `${d.body} (editado)`]);
+      if (r.rowCount) await this.handler.onPartnerChanged();
+      return;
+    }
+    if (u.update?.message === null || u.update?.messageStubType === 1 /* REVOKE */) {
+      const r = await q(`update messages set body = '[eliminó este mensaje]', kind = 'other' where wa_id = $1`, [u.key.id]);
+      if (r.rowCount) await this.handler.onPartnerChanged();
+    }
+  }
+
+  private callOffers = new Map<string, { isVideo: boolean; answered: boolean; at: number }>();
+
+  private async onCall(c: { id: string; from: string; callerPn?: string; status: string; isVideo?: boolean; isGroup?: boolean }) {
+    if (c.isGroup) return;
+    const fromPartner =
+      this.partnerJids.has(jidNormalizedUser(c.from)) || (c.callerPn && jidNormalizedUser(c.callerPn) === partnerPnJid);
+    if (!fromPartner) return;
+    if (c.status === 'offer' || c.status === 'ringing') {
+      if (!this.callOffers.has(c.id)) {
+        this.callOffers.set(c.id, { isVideo: !!c.isVideo, answered: false, at: Date.now() });
+        console.log(`[call] she is calling (${c.isVideo ? 'video' : 'voice'})`);
+        await this.notifySelf(`Te está llamando por ${c.isVideo ? 'videollamada' : 'llamada'}.`);
+      }
+    } else if (c.status === 'accept') {
+      const o = this.callOffers.get(c.id);
+      if (o) o.answered = true;
+    } else if (c.status === 'timeout' || c.status === 'reject' || c.status === 'terminate') {
+      const o = this.callOffers.get(c.id);
+      this.callOffers.delete(c.id);
+      // A linked device doesn't always see you answer on the phone. A call that ended after
+      // ringing for over a minute was almost certainly picked up, so don't treat it as missed.
+      const longCall = o && c.status === 'terminate' && Date.now() - o.at > 60_000;
+      if (o && !o.answered && !longCall) await this.handler.onMissedCall(o.isVideo);
+    }
   }
 
   private async route(raw: WAMessage) {
@@ -205,8 +262,8 @@ class WhatsApp {
       await this.handler.onManualReply(p);
       return;
     }
-    if (p.kind === 'reaction') return;
     await storeMessage(p, 'human', 'live');
+    if (p.kind === 'reaction') return; // her reaction to your message: context, nothing to answer
     await this.handler.onPartnerMessage(p, raw);
   }
 
@@ -252,53 +309,26 @@ class WhatsApp {
   }
 
   parse(raw: WAMessage): Parsed | null {
-    const c = normalizeMessageContent(raw.message);
-    if (!c || !raw.key.id) return null;
-    const type = getContentType(c);
-    if (!type || type === 'protocolMessage' || type === 'senderKeyDistributionMessage') return null;
-
-    let kind: IncomingKind = 'other';
-    let body = '';
-    switch (type) {
-      case 'conversation':
-      case 'extendedTextMessage':
-        kind = 'text';
-        body = this.textOf(raw) ?? '';
-        break;
-      case 'imageMessage':
-        kind = 'image';
-        body = `[foto]${c.imageMessage?.caption ? ' ' + c.imageMessage.caption : ''}`;
-        break;
-      case 'videoMessage':
-        kind = 'other';
-        body = `[video]${c.videoMessage?.caption ? ' ' + c.videoMessage.caption : ''}`;
-        break;
-      case 'audioMessage':
-        kind = 'audio';
-        body = '[nota de voz]';
-        break;
-      case 'stickerMessage':
-        kind = 'sticker';
-        body = '[sticker]';
-        break;
-      case 'reactionMessage':
-        kind = 'reaction';
-        body = `[reacción ${c.reactionMessage?.text ?? ''}]`;
-        break;
-      default:
-        body = `[${type.replace('Message', '')}]`;
-    }
+    if (!raw.key.id) return null;
+    const d = describe(raw.message);
+    if (!d) return null;
     const tsRaw = raw.messageTimestamp;
     const ts = new Date(Number(typeof tsRaw === 'object' && tsRaw ? tsRaw.toString() : tsRaw ?? Date.now() / 1000) * 1000);
-    return { waId: raw.key.id, fromMe: !!raw.key.fromMe, kind, body, ts, key: raw.key };
+    return { waId: raw.key.id, fromMe: !!raw.key.fromMe, kind: d.kind, body: d.body, ts, key: raw.key, hasVisual: !!d.visual };
   }
 
-  async downloadImage(raw: WAMessage): Promise<{ data: string; mediaType: string } | null> {
+  /** The image Claude should see for this message (photo, sticker, video thumbnail, link preview). */
+  async visualOf(raw: WAMessage): Promise<{ data: string; mediaType: string; label: string } | null> {
+    const d = describe(raw.message);
+    if (!d?.visual) return null;
     try {
+      if (d.visual.source === 'thumb' && d.visual.thumb) {
+        return { data: Buffer.from(d.visual.thumb).toString('base64'), mediaType: 'image/jpeg', label: d.visual.label };
+      }
       const buf = await downloadMediaMessage(raw, 'buffer', {});
-      const mediaType = normalizeMessageContent(raw.message)?.imageMessage?.mimetype ?? 'image/jpeg';
-      return { data: buf.toString('base64'), mediaType: mediaType.split(';')[0] };
-    } catch {
+      return { data: buf.toString('base64'), mediaType: (d.visual.mime ?? 'image/jpeg').split(';')[0], label: d.visual.label };
+    } catch (e) {
+      console.log('[wa] could not get media:', (e as Error)?.message);
       return null;
     }
   }

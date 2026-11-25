@@ -2,7 +2,7 @@ import pg from 'pg';
 import { config } from './config.js';
 import { archiveIfPartnerChanged, logEvent, migrate, sslFor } from './db.js';
 import { startMemoryJob } from './engine/memory.js';
-import { onManualReply, onPartnerMessage, onSelfCommand, resumeOnBoot } from './engine/pipeline.js';
+import { onManualReply, onMissedCall, onPartnerChanged, onPartnerMessage, onSelfCommand, resumeOnBoot } from './engine/pipeline.js';
 import { recoverStuck, startSender } from './engine/sender.js';
 import { buildServer } from './server.js';
 import { wa } from './wa/client.js';
@@ -27,7 +27,7 @@ async function main() {
   console.log('whatsapp lock acquired');
 
   await recoverStuck();
-  await wa.start({ onPartnerMessage, onManualReply, onSelfCommand }).catch((e) => {
+  await wa.start({ onPartnerMessage, onPartnerChanged, onMissedCall, onManualReply, onSelfCommand }).catch((e) => {
     console.log('[wa] start failed:', e?.message ?? e);
     wa.lastStatus = `error al iniciar: ${e?.message ?? e}`;
   });

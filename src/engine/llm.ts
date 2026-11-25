@@ -41,7 +41,6 @@ function rules(a: Autonomy) {
   const handoff = [
     '- Una emergencia clara: está en peligro, habla de hacerse daño, un accidente, le cuesta respirar, sangrado, se desmayó, dolor muy fuerte que no cede, o pide ayuda urgente.',
     '- Pregunta si es un bot, una IA o si de verdad soy yo.',
-    '- Manda una nota de voz o algo que no puedes ver/entender.',
     '- Me pide llamar ahora, verla ahora, o algo que yo tendría que hacer en persona.',
     '- No tienes cómo responder sin inventar.',
   ];
@@ -73,6 +72,16 @@ ${alert.join('\n')}
 `
     : ''
 }
+Cuando manda algo que no es texto:
+- Foto o sticker: los ves; reacciona a lo que realmente muestran (no digas "qué linda foto" genérico).
+- Video, gif o video nota: solo ves una miniatura; responde a lo que se ve y al texto, sin fingir que viste el video completo.
+- Link: usa el título/vista previa para saber de qué trata; si no hay, pregunta o reacciona con interés.
+- Nota de voz o audio: no puedes escucharla. Responde como yo si no puedo escuchar ahorita (ej. "no puedo escuchar ahorita amor, ¿me escribes?") salvo que por el contexto parezca urgente (entonces handoff). Pon en "alert" que mandó un audio.
+- Ubicación: comenta con naturalidad (dónde está, si llegó bien). Documento, contacto, encuesta o evento: responde al contenido que ves.
+- Llamada perdida: escríbele como yo si no pude contestar ("no pude contestar, ¿todo bien?"), sin inventar por qué. Pon "alert".
+- "(respondiendo a «…»)" indica a qué mensaje está respondiendo. "[reenviado]" es algo que reenvió, no lo escribió ella.
+- Si editó o eliminó un mensaje, responde a lo que dice ahora; no comentes que lo borró salvo que sea obvio que lo esperaría.
+
 Usa "react" para mensajes que solo piden un gesto (un "te quiero", una foto bonita, un "llegué"), con un solo emoji que yo usaría.
 Usa "wait" si la conversación ya cerró naturalmente (ej. "ok", "buenas noches" después de que ya me despedí).
 En cualquier otro caso responde normal con "reply" y deja "alert" vacío.`;
@@ -111,7 +120,7 @@ async function askJson<T>(params: Omit<Anthropic.MessageCreateParamsNonStreaming
 
 export async function decide(
   ctx: Awaited<ReturnType<typeof buildContext>>,
-  images: { data: string; mediaType: string }[],
+  images: { data: string; mediaType: string; label: string }[],
   autonomy: Autonomy,
   hint?: string,
 ): Promise<Decision> {
@@ -130,12 +139,10 @@ export async function decide(
 
   const newMsgs = ctx.pending.map((p) => `- ${p.body}`).join('\n');
   const content: Anthropic.ContentBlockParam[] = [
-    ...images.map(
-      (img): Anthropic.ImageBlockParam => ({
-        type: 'image',
-        source: { type: 'base64', media_type: img.mediaType as any, data: img.data },
-      }),
-    ),
+    ...images.flatMap((img): Anthropic.ContentBlockParam[] => [
+      { type: 'text', text: `${img.label}:` },
+      { type: 'image', source: { type: 'base64', media_type: img.mediaType as any, data: img.data } },
+    ]),
     {
       type: 'text',
       text: `Ahora es ${localStamp(new Date())}.\n\n# Conversación reciente\n${ctx.transcript}\n\n# Mensajes nuevos de ella que debo responder\n${newMsgs}${hint ? `\n\nNota: ${hint}` : ''}\n\nDecide qué hacer y responde con el JSON pedido.`,

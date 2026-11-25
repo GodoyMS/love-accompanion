@@ -19,7 +19,7 @@ let inboxVersion = 0;
 const rawById = new Map<string, WAMessage>();
 
 export async function onPartnerMessage(p: Parsed, raw: WAMessage) {
-  if (p.kind === 'image') {
+  if (p.hasVisual) {
     rawById.set(p.waId, raw);
     setTimeout(() => rawById.delete(p.waId), 30 * 60_000);
   }
@@ -48,17 +48,13 @@ async function think() {
     const ctx = await buildContext();
     if (!ctx.pending.length) return;
 
-    if (ctx.pending.some((m) => m.kind === 'audio')) {
-      await handoff('mandó una nota de voz', ctx.pending.map((m) => m.body).join(' / '));
-      return;
-    }
-
+    // Photos, stickers, video thumbnails and link previews she just sent (last 4).
     const images = (
       await Promise.all(
         ctx.pending
-          .filter((m) => m.kind === 'image' && m.wa_id && rawById.has(m.wa_id))
-          .slice(-3)
-          .map((m) => wa.downloadImage(rawById.get(m.wa_id!)!)),
+          .filter((m) => m.wa_id && rawById.has(m.wa_id))
+          .slice(-4)
+          .map((m) => wa.visualOf(rawById.get(m.wa_id!)!)),
       )
     ).filter((x): x is NonNullable<typeof x> => !!x);
 
@@ -152,6 +148,30 @@ async function handoff(reason: string, preview: string) {
   }
   await kvSet('last_handoff_at', Date.now());
   await wa.notifySelf(`No le respondí, te toca a ti: ${reason}\n\nElla: "${preview.slice(0, 300)}"`);
+}
+
+/** She edited or deleted a message: re-think with the corrected conversation. */
+export async function onPartnerChanged() {
+  console.log('[in] she edited or deleted a message');
+  inboxVersion++;
+  const n = await cancelPending('she edited/deleted a message');
+  const unanswered = await q(
+    `select 1 from messages where not from_me and kind <> 'reaction'
+       and ts > coalesce((select max(ts) from messages where from_me), 'epoch') limit 1`,
+  );
+  if (n || unanswered.rowCount) await scheduleThink();
+}
+
+/** She called and nobody picked up: it goes into the chat so the bot can text her back. */
+export async function onMissedCall(isVideo: boolean) {
+  console.log(`[in] missed ${isVideo ? 'video ' : ''}call`);
+  await q(
+    `insert into messages (wa_id, from_me, sent_by, kind, body, ts, source) values ($1, false, 'human', 'call', $2, now(), 'live')`,
+    [`call-${Date.now()}`, `[llamada ${isVideo ? 'de video ' : ''}perdida]`],
+  );
+  inboxVersion++;
+  await cancelPending('missed call');
+  await scheduleThink();
 }
 
 /**
