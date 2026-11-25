@@ -109,7 +109,15 @@ async function think() {
       }
     }
     const wake = quietHoursEnd(sendAt, s.quietHours);
-    if (wake) sendAt = new Date(wake.getTime() + rand(5, 40) * 60_000);
+    if (wake) {
+      sendAt = new Date(wake.getTime() + rand(5, 40) * 60_000);
+      const at = sendAt.toLocaleTimeString('es-PE', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' });
+      console.log('[think] deferred by sleep hours');
+      // Never hold a reply silently: tell you, so you can send it now from the panel or answer yourself.
+      if (d.action === 'reply' || d.action === 'react') {
+        await wa.notifySelf(`Son tus horas de sueño (Ajustes), así que dejé su respuesta para las ${at}. Si quieres que salga ya, toca "Enviar ya" en el panel o desactiva las horas de sueño.`);
+      }
+    }
 
     if (d.action === 'reply' || d.action === 'react') console.log(`[think] scheduled for ${sendAt.toISOString()}`);
     const readKeys = JSON.stringify(ctx.pending.map((m) => m.raw_key).filter(Boolean));
@@ -252,6 +260,15 @@ export async function onSelfCommand(text: string) {
 
 /** After a restart, pick up anything she sent in the last couple of hours that never got an answer. */
 export async function resumeOnBoot() {
+  // Replies parked for "sleep hours" that are now turned off: send them soon instead of hours later.
+  const s0 = await getSettings();
+  if (!s0.quietHours) {
+    const r = await q(
+      `update pending_replies set send_at = now() + (random() * interval '40 seconds') + interval '5 seconds'
+       where status = 'pending' and send_at > now() + interval '10 minutes'`,
+    );
+    if (r.rowCount) console.log(`[boot] brought forward ${r.rowCount} reply(ies) parked for sleep hours`);
+  }
   // Older versions auto-paused when you typed; lift that kind of pause (never a manual one).
   const lastPause = await q(`select detail from events where type = 'paused' order by ts desc limit 1`);
   if (String(lastPause.rows[0]?.detail ?? '').includes('escribiste tú')) {

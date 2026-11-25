@@ -193,9 +193,14 @@ function Queue({ status, onChange }: { status: Status; onChange: () => void }) {
             {p.reaction && <span className="bubble me">{p.reaction}</span>}
             {p.parts.map((t, i) => <div key={i} className="bubble me bot">{t}</div>)}
           </div>
-          <button className="link danger" onClick={async () => { await api(`/api/pending/${p.id}`, { method: 'DELETE' }); onChange(); }}>
-            Cancelar
-          </button>
+          <div className="row gap">
+            <button className="link" onClick={async () => { await api(`/api/pending/${p.id}/now`, { method: 'POST' }); onChange(); }}>
+              Enviar ya
+            </button>
+            <button className="link danger" onClick={async () => { await api(`/api/pending/${p.id}`, { method: 'DELETE' }); onChange(); }}>
+              Cancelar
+            </button>
+          </div>
         </div>
       ))}
     </section>
@@ -382,12 +387,18 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
       <label>Demora extra antes de responder (seg)
         <div className="row gap"><input type="number" value={s.replyDelaySec[0]} onChange={(e) => pair('replyDelaySec', 0, e.target.value)} /> a <input type="number" value={s.replyDelaySec[1]} onChange={(e) => pair('replyDelaySec', 1, e.target.value)} /></div>
       </label>
-      <label>Horas de sueño (no responde)
-        <div className="row gap">
-          <input type="number" min={0} max={23} value={s.quietHours?.[0] ?? ''} placeholder="—" onChange={(e) => setS({ ...s, quietHours: e.target.value === '' ? null : [num(e.target.value), s.quietHours?.[1] ?? 7] })} /> a
-          <input type="number" min={0} max={23} value={s.quietHours?.[1] ?? ''} placeholder="—" onChange={(e) => setS({ ...s, quietHours: [s.quietHours?.[0] ?? 1, num(e.target.value)] })} /> h
-        </div>
+      <label className="check">
+        <input type="checkbox" checked={!!s.quietHours} onChange={(e) => setS({ ...s, quietHours: e.target.checked ? [1, 7] : null })} />
+        Horas de sueño: de noche deja las respuestas para la mañana
       </label>
+      {s.quietHours && (
+        <label>Duermo de
+          <div className="row gap">
+            <input type="number" min={0} max={23} value={s.quietHours[0]} onChange={(e) => setS({ ...s, quietHours: [Math.min(23, num(e.target.value)), s.quietHours![1]] })} /> a
+            <input type="number" min={0} max={23} value={s.quietHours[1]} onChange={(e) => setS({ ...s, quietHours: [s.quietHours![0], Math.min(23, num(e.target.value))] })} /> h
+          </div>
+        </label>
+      )}
       <label>Si le escribes tú, minutos que espera a que sigas tú antes de volver a responder
         <input type="number" value={s.handBackMinutes} onChange={(e) => setS({ ...s, handBackMinutes: num(e.target.value) })} />
         <span className="muted small">El bot no se apaga: si contestas tú, descarta lo que tenía listo.</span>

@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pausedUntil: null,
   debounceSec: [8, 25],
   replyDelaySec: [5, 45],
-  quietHours: [1, 7],
+  quietHours: null, // off by default: always there for her. Turn on in Ajustes if you want "sleep" hours.
   handBackMinutes: 2,
   autonomy: { feelings: true, health: true, conflicts: false, plans: false },
 };
@@ -43,18 +43,24 @@ let cache: Settings | null = null;
 
 export async function getSettings(): Promise<Settings> {
   if (!cache) {
-    const saved = await kvGet<Partial<Settings>>('settings', {});
-    // Old, slower defaults that were never customised → move to the faster ones.
-    if (String(saved.debounceSec) === '20,60') delete saved.debounceSec;
-    if (String(saved.replyDelaySec) === '10,120') delete saved.replyDelaySec;
-    delete (saved as any).takeoverMinutes; // replaced by handBackMinutes (no more auto-pause)
+    const saved = await kvGet<Partial<Settings> & { _v?: number }>('settings', {});
+    // One-time upgrades of settings saved by older versions (persisted, so your later choices stick).
+    if ((saved._v ?? 0) < 2 && Object.keys(saved).length) {
+      if (String(saved.debounceSec) === '20,60') delete saved.debounceSec; // old slow defaults
+      if (String(saved.replyDelaySec) === '10,120') delete saved.replyDelaySec;
+      delete (saved as any).takeoverMinutes; // replaced by handBackMinutes (no more auto-pause)
+      const qh = saved.quietHours as any; // old default 1–7, or half-cleared by the old form → off
+      if (Array.isArray(qh) && (String(qh) === '1,7' || qh[1] === 0)) saved.quietHours = null;
+      saved._v = 2;
+      await kvSet('settings', saved);
+    }
     cache = { ...DEFAULT_SETTINGS, ...saved, autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) } };
   }
   return cache;
 }
 
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...(await getSettings()), ...patch };
+  const next = { ...(await getSettings()), ...patch, _v: 2 };
   await kvSet('settings', next);
   cache = next;
   return next;

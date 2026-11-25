@@ -105,6 +105,10 @@ export async function buildServer() {
       return { ok: true };
     });
     api.delete('/api/pending', async () => ({ cancelled: await cancelPending('panel') }));
+    api.post<{ Params: { id: string } }>('/api/pending/:id/now', async (req) => {
+      await q(`update pending_replies set send_at = now() where id = $1 and status = 'pending'`, [req.params.id]);
+      return { ok: true };
+    });
 
     api.put<{ Body: Partial<Settings> }>('/api/settings', async (req) => {
       const { enabled: _e, pausedUntil: _p, ...rest } = req.body ?? {};
