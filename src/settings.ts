@@ -18,7 +18,7 @@ export interface Settings {
   handBackMinutes: number;
   /** Answer her voice notes with a voice note in your voice (needs ELEVENLABS_VOICE_ID). */
   voiceReplies: boolean;
-  /** Which sensitive topics the bot answers on its own (it always alerts you too). */
+  /** How freely the bot handles sensitive topics. It always answers; off = short and cautious. */
   autonomy: {
     /** Sadness, tiredness, "me siento mal", stress, a bad day. */
     feelings: boolean;

@@ -94,8 +94,15 @@ async function think() {
       d = await decide(ctx, images, st.autonomy, undefined, byVoice);
     } catch (e) {
       if (!(e instanceof NoAnswer)) throw e;
-      // No usable answer from the model: leave it to you rather than sending something broken.
-      d = { action: 'handoff', reason: e.message };
+      // The bot never leaves her unanswered: try once more, insisting on a reply.
+      console.log(`[think] no usable answer (${e.message}), retrying`);
+      try {
+        d = await decide(ctx, images, st.autonomy, 'Tienes que responderle tú sí o sí con "reply", con cariño y sin inventar nada.', byVoice);
+      } catch (e2) {
+        if (!(e2 instanceof NoAnswer)) throw e2;
+        // Only a real failure (model gave nothing twice) ever lands on you.
+        d = { action: 'handoff', reason: e2.message };
+      }
     }
     console.log(`[think] decision: ${d.action}`);
     // She wrote while we were thinking: drop this answer, the next pass sees everything.
@@ -109,10 +116,12 @@ async function think() {
 
     const s = await getSettings();
     const last = ctx.pending[ctx.pending.length - 1];
-    let sendAt = new Date(Date.now() + rand(s.replyDelaySec[0], s.replyDelaySec[1]) * 1000);
+    // An emergency is answered right away: no human-like delay, no hand-back window, no sleep hours.
+    const urgent = d.action === 'reply' && !!d.urgent;
+    let sendAt = new Date(Date.now() + (urgent ? rand(3, 10) : rand(s.replyDelaySec[0], s.replyDelaySec[1])) * 1000);
     // You're chatting with her yourself: give you room. The bot only steps in if you go quiet
     // and she's still waiting; if you answer first, the sender drops this reply.
-    const lastManual = await lastManualMessageAt();
+    const lastManual = urgent ? null : await lastManualMessageAt();
     if (lastManual) {
       const handBack = new Date(lastManual.getTime() + s.handBackMinutes * 60_000 + rand(5, 30) * 1000);
       if (handBack > sendAt) {
@@ -120,15 +129,13 @@ async function think() {
         console.log('[think] you were active recently, waiting for you first');
       }
     }
-    const wake = quietHoursEnd(sendAt, s.quietHours);
+    const wake = urgent ? null : quietHoursEnd(sendAt, s.quietHours);
     if (wake) {
       sendAt = new Date(wake.getTime() + rand(5, 40) * 60_000);
       const at = sendAt.toLocaleTimeString('es-PE', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' });
       console.log('[think] deferred by sleep hours');
-      // Never hold a reply silently: tell you, so you can send it now from the panel or answer yourself.
-      if (d.action === 'reply' || d.action === 'react') {
-        await wa.notifySelf(`Son tus horas de sueño (Ajustes), así que dejé su respuesta para las ${at}. Si quieres que salga ya, toca "Enviar ya" en el panel o desactiva las horas de sueño.`);
-      }
+      // Visible in the panel ("Enviar ya"); no WhatsApp ping, you're asleep.
+      if (d.action === 'reply' || d.action === 'react') await logEvent('deferred', `horas de sueño, sale a las ${at}`);
     }
 
     if (d.action === 'reply' || d.action === 'react') console.log(`[think] scheduled for ${sendAt.toISOString()}`);
@@ -163,15 +170,15 @@ async function think() {
             voice ? Buffer.from(voice.waveform) : null,
           ],
         );
-        if (d.alert) {
-          await logEvent('alert', d.alert);
-          // One heads-up per topic is enough: don't ping you on every follow-up message.
-          const last = await kvGet<number>('last_alert_at', 0);
-          if (Date.now() - last > 30 * 60_000) {
-            await kvSet('last_alert_at', Date.now());
-            const at = sendAt.toLocaleTimeString('es-PE', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' });
+        if (d.alert || urgent) await logEvent(urgent ? 'urgent' : 'alert', d.alert || 'emergencia');
+        // Delicate-but-normal topics only go to the panel log. Only a real emergency pings you,
+        // and only once per 30 min even if she keeps writing — the bot keeps answering her meanwhile.
+        if (urgent) {
+          const lastUrgent = await kvGet<number>('last_urgent_at', 0);
+          if (Date.now() - lastUrgent > 30 * 60_000) {
+            await kvSet('last_urgent_at', Date.now());
             await wa.notifySelf(
-              `Tema delicado, lo estoy llevando yo: ${d.alert}\n\nElla: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\nVoy a responder a las ${at}: "${d.messages.join(' / ')}"\n\nSi le escribes tú antes, no envío nada y te dejo llevar la conversación mientras estés activo. No te vuelvo a avisar de esto en 30 min.`,
+              `Emergencia, ya le estoy respondiendo yo: ${d.alert || 'ver chat'}\n\nElla: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\nLe respondí: "${d.messages.join(' / ')}"\n\nSigo acompañándola. Solo te aviso por si quieres intervenir.`,
             );
           }
         }
@@ -221,14 +228,14 @@ async function think() {
 
 async function handoff(reason: string, preview: string) {
   await logEvent('handoff', `${reason} — ${preview.slice(0, 200)}`);
-  // She keeps writing while you haven't answered yet: one alert is enough for 10 min.
+  // Only reached when the model failed twice. One alert is enough for 10 min.
   const last = await kvGet<number>('last_handoff_at', 0);
   if (Date.now() - last < 10 * 60_000) {
     console.log('[think] handoff again, alert already sent recently');
     return;
   }
   await kvSet('last_handoff_at', Date.now());
-  await wa.notifySelf(`No le respondí, te toca a ti: ${reason}\n\nElla: "${preview.slice(0, 300)}"`);
+  await wa.notifySelf(`No pude generar una respuesta (falló dos veces): ${reason}\n\nElla: "${preview.slice(0, 300)}"`);
 }
 
 /** She edited or deleted a message: re-think with the corrected conversation. */

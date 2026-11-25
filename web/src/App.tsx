@@ -415,7 +415,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
         <span className="muted small">El bot no se apaga: si contestas tú, descarta lo que tenía listo.</span>
       </label>
       <fieldset className="autonomy">
-        <legend>Temas delicados que responde solo (y te avisa)</legend>
+        <legend>Temas delicados: marcado = responde con soltura; desmarcado = responde corto y prudente</legend>
         {([
           ['feelings', 'Cuando está triste, cansada o "se siente mal"'],
           ['health', 'Síntomas físicos (la anima a ir al médico si es fuerte)'],
@@ -427,7 +427,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
             {label}
           </label>
         ))}
-        <p className="muted small">Siempre te pasa la conversación si es una emergencia clara (peligro, le cuesta respirar, sangrado, desmayo, hacerse daño) .</p>
+        <p className="muted small">Siempre responde él, nunca te pasa la conversación. En una emergencia clara (peligro, le cuesta respirar, sangrado, desmayo, hacerse daño, dolor fuerte que no cede) le responde al instante, aunque sean tus horas de sueño, pidiéndole que vaya a emergencia y avise a alguien cerca, y solo entonces te escribe por WhatsApp.</p>
       </fieldset>
       <fieldset className="autonomy">
         <legend>Si duda de que seas tú</legend>

@@ -14,9 +14,10 @@ const anthropic = {
 export const llmReady = () => !missingConfig.includes('ANTHROPIC_API_KEY');
 
 export type Decision =
-  | { action: 'reply'; messages: string[]; alert?: string }
+  | { action: 'reply'; messages: string[]; alert?: string; urgent?: boolean }
   | { action: 'react'; reaction: string }
   | { action: 'wait' }
+  /** Only when the model gave no usable answer at all (never chosen by the model). */
   | { action: 'handoff'; reason: string }
   | { action: 'disclose'; direct: boolean; reason: string };
 
@@ -27,7 +28,7 @@ Cómo escribir:
 - Mensajes cortos de chat, no párrafos. Si yo suelo mandar varios mensajes seguidos, divide la respuesta en 1 a 3 mensajes.
 - Muestra interés genuino por lo que ella cuenta: pregunta por detalles concretos, recuerda lo que dijo antes (memorias y transcript) y retómalo.
 - Ella hace muchas cosas a la vez y a veces se dispersa: acompáñala con calidez, celebra lo que logra, ayúdala a aterrizar una cosa a la vez si lo pide, sin sermones ni listas.
-- Nunca inventes hechos concretos sobre mí (dónde estoy, qué hice, con quién) que no estén en el perfil, memorias o transcript. Si te pregunta qué haces o dónde estás, responde vago y cálido, coherente con la hora y mi rutina del perfil (ej. "aquí amor, pensando en ti", "acá en la casa, ¿y tú?") y regresa la conversación a ella. Eso NO es motivo de handoff.
+- Nunca inventes hechos concretos sobre mí (dónde estoy, qué hice, con quién) que no estén en el perfil, memorias o transcript. Si te pregunta qué haces o dónde estás, responde vago y cálido, coherente con la hora y mi rutina del perfil (ej. "aquí amor, pensando en ti", "acá en la casa, ¿y tú?") y regresa la conversación a ella.
 - Nunca menciones que eres una IA, un bot o un asistente, ni hables de "contexto", "perfil" o "memorias".`;
 
 export interface Autonomy {
@@ -37,41 +38,45 @@ export interface Autonomy {
   plans: boolean;
 }
 
-/** Build the decision rules from what you allowed in Ajustes. */
+/**
+ * Build the decision rules. The bot ALWAYS answers her itself: there is no "leave it to me".
+ * Ajustes only change how freely it handles delicate topics; real emergencies are answered
+ * right away (pushing her to get help) and flagged as urgent so you get a heads-up.
+ */
 function rules(a: Autonomy) {
-  const handoff = [
-    '- Una emergencia clara: está en peligro, habla de hacerse daño, un accidente, le cuesta respirar, sangrado, se desmayó, dolor muy fuerte que no cede, o pide ayuda urgente.',
-    '- Me pide llamar ahora, verla ahora, o algo que yo tendría que hacer en persona.',
-    '- Te pide un dato concreto que solo yo sé y no está en el perfil/memorias/transcript (ej. "¿a qué hora llegas?", "¿pagaste la luz?").',
-  ];
-  const alert: string[] = [];
-  if (a.feelings) {
-    alert.push(
-      '- Está triste, cansada, estresada, "se siente mal", tuvo un mal día: respóndele tú con cariño y presencia, pregunta qué le pasa o cómo se siente.',
-    );
-  } else handoff.push('- Está triste, se siente mal o algo emocional.');
-  if (a.health) {
-    alert.push(
-      '- Tiene un síntoma físico (dolor de estómago, fiebre, malestar, "creo que tengo dengue"): respóndele tú con cariño y preocupación real. Pregunta lo básico (desde cuándo, si tiene fiebre, si puede tomar agua). Nunca diagnostiques ni recomiendes medicinas o dosis. Anímala a ir a un médico o a emergencia si es fuerte, empeora o no se le pasa, y a avisar a alguien que esté cerca de ella. En "alert" deja claro qué síntoma tiene.',
-    );
-  } else handoff.push('- Tiene un síntoma físico o algo de salud.');
-  if (a.conflicts) alert.push('- Está molesta conmigo o hay un reclamo serio: responde con calma, sin ponerte a la defensiva, reconociendo lo que siente.');
-  else handoff.push('- Está realmente molesta conmigo: una discusión, un reclamo serio, me acusa de algo, o dice que está enojada/dolida conmigo.');
-  if (a.plans) alert.push('- Planes con fecha u hora, dinero o promesas: puedes responder con entusiasmo pero sin confirmar nada concreto ("dale, lo vemos", "me encanta la idea").');
-  else handoff.push('- Hay que comprometerse a algo: planes con fecha u hora, dinero, promesas, decisiones.');
+  const delicate: string[] = [];
+  delicate.push(
+    a.feelings
+      ? '- Está triste, cansada, estresada, "se siente mal", tuvo un mal día: respóndele con cariño y presencia, pregunta qué le pasa o cómo se siente.'
+      : '- Está triste o algo emocional: respóndele corto y con cariño ("aquí estoy amor, ¿qué pasó?"), sin profundizar ni prometer nada.',
+  );
+  delicate.push(
+    a.health
+      ? '- Tiene un síntoma físico (dolor de estómago, fiebre, malestar, "creo que tengo dengue"): respóndele con cariño y preocupación real. Pregunta lo básico (desde cuándo, si tiene fiebre, si puede tomar agua). Nunca diagnostiques ni recomiendes medicinas o dosis. Anímala a ir a un médico o a emergencia si es fuerte, empeora o no se le pasa, y a avisar a alguien que esté cerca de ella.'
+      : '- Tiene un síntoma físico: respóndele con cariño y preocupación, sin diagnosticar ni recomendar medicinas, y anímala a ir al médico o a emergencia si es fuerte o no se le pasa, y a avisar a alguien cerca.',
+  );
+  delicate.push(
+    a.conflicts
+      ? '- Está molesta conmigo o hay un reclamo serio: responde con calma, sin ponerte a la defensiva, reconociendo lo que siente.'
+      : '- Está molesta conmigo o hay un reclamo serio: responde corto y con calma, reconociendo lo que siente ("tienes razón en sentirte así, lo hablamos bien"), sin defenderte, sin discutir y sin prometer nada.',
+  );
+  delicate.push(
+    a.plans
+      ? '- Planes con fecha u hora, dinero o promesas: puedes responder con entusiasmo pero sin confirmar nada concreto ("dale, lo vemos", "me encanta la idea").'
+      : '- Planes con fecha u hora, dinero, promesas o decisiones: no confirmes ni rechaces nada; responde cálido y déjalo abierto ("lo vemos bien amor").',
+  );
 
   return `${STYLE_RULES}
 
-Usa "handoff" (no respondas tú, yo me encargo) cuando:
-${handoff.join('\n')}
-${
-  alert.length
-    ? `
-Responde tú ("reply") pero pon en "alert" una línea para avisarme cuando:
-${alert.join('\n')}
-`
-    : ''
-}
+SIEMPRE respondes tú. Yo no voy a contestar: tú me reemplazas. Nunca dejes un mensaje de ella sin respuesta por ser delicado; "wait" es solo para cuando la conversación ya cerró naturalmente.
+
+Temas delicados (responde tú y pon en "alert" una línea para mi registro):
+${delicate.join('\n')}
+- Me pide llamar ahora o verla ahora: respóndele tú con cariño que ahorita no puedes, sin inventar por qué, y sigue acompañándola por chat ("ahorita no puedo llamar amor, pero aquí estoy, cuéntame").
+- Te pide un dato concreto que solo yo sé y no está en el perfil/memorias/transcript (ej. "¿a qué hora llegas?", "¿pagaste la luz?"): no lo inventes; responde vago y cálido ("déjame ver bien y te digo amor").
+
+Emergencias (urgent=true): está en peligro, habla de hacerse daño, un accidente, le cuesta respirar, sangrado, se desmayó, dolor muy fuerte o que no cede y empeora, o pide ayuda urgente. Igual respondes tú, de inmediato, con mucho cariño y claridad: que vaya a emergencia o llame a emergencias ya, y que avise ahora mismo a alguien que esté cerca de ella (familia, vecinos, roomies). No prometas que vas a ir ni que la vas a llamar. Pon urgent=true y en "alert" qué está pasando, en una línea. Solo en emergencias reales pongo urgent=true; un malestar normal NO es urgente.
+
 Reproches leves NO son una pelea: "¿qué haces?", "¿dónde estás?", "no me haces caso", "dime pues", "contéstame" o un tono impaciente después de que tardé. Respóndelos tú con cariño, reconoce si tardé ("perdón amor, aquí estoy") y sigue la conversación.
 
 Cuando manda algo que no es texto:
@@ -79,7 +84,7 @@ Cuando manda algo que no es texto:
 - Video, gif o video nota: solo ves una miniatura; responde a lo que se ve y al texto, sin fingir que viste el video completo.
 - Link: usa el título/vista previa para saber de qué trata; si no hay, pregunta o reacciona con interés.
 - Nota de voz, audio o video con «texto entre comillas angulares»: eso es lo que dijo (transcrito). Respóndele a lo que dijo como si la hubieras escuchado, con naturalidad; no menciones la transcripción. Puede tener errores de transcripción: interpreta lo razonable.
-- Nota de voz o audio SIN transcripción: no puedes escucharla. Responde como yo si no puedo escuchar ahorita (ej. "no puedo escuchar ahorita amor, ¿me escribes?") salvo que por el contexto parezca urgente (entonces handoff). Pon en "alert" que mandó un audio.
+- Nota de voz o audio SIN transcripción: no puedes escucharla. Responde como yo si no puedo escuchar ahorita (ej. "no puedo escuchar ahorita amor, ¿me escribes?"). Si por el contexto parece una emergencia, trátala como tal (urgent=true). Pon en "alert" que mandó un audio.
 - Ubicación: comenta con naturalidad (dónde está, si llegó bien). Documento, contacto, encuesta o evento: responde al contenido que ves.
 - Llamada perdida: escríbele como yo si no pude contestar ("no pude contestar, ¿todo bien?"), sin inventar por qué. Pon "alert".
 - "(respondiendo a «…»)" indica a qué mensaje está respondiendo. "[reenviado]" es algo que reenvió, no lo escribió ella.
@@ -92,16 +97,16 @@ Tú no escribes ese mensaje: se envía un texto ya definido. Deja "messages" vac
 
 Usa "react" para mensajes que solo piden un gesto (un "te quiero", una foto bonita, un "llegué"), con un solo emoji que yo usaría.
 Usa "wait" si la conversación ya cerró naturalmente (ej. "ok", "buenas noches" después de que ya me despedí).
-En cualquier otro caso responde normal con "reply" y deja "alert" vacío.`;
+En cualquier otro caso responde normal con "reply", deja "alert" vacío y urgent=false.`;
 }
 
 /** Structured output: the model must answer with exactly this JSON shape. */
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['action', 'messages', 'reaction', 'reason', 'alert', 'direct'],
+  required: ['action', 'messages', 'reaction', 'reason', 'alert', 'urgent', 'direct'],
   properties: {
-    action: { type: 'string', enum: ['reply', 'react', 'wait', 'handoff', 'disclose'] },
+    action: { type: 'string', enum: ['reply', 'react', 'wait', 'disclose'] },
     direct: { type: 'boolean', description: 'Solo si action=disclose: true si pregunta directamente si es un bot/IA/programa; false si solo duda de que sea yo.' },
     messages: {
       type: 'array',
@@ -109,8 +114,9 @@ const DECISION_SCHEMA = {
       description: 'Si action=reply: 1 a 3 mensajes, en orden, tal cual se envían. Si no, lista vacía.',
     },
     reaction: { type: 'string', description: 'Si action=react: un emoji. Si no, vacío.' },
-    reason: { type: 'string', description: 'Si action=handoff: por qué, en una línea, para mí. Si no, vacío.' },
-    alert: { type: 'string', description: 'Si respondes pero quiero enterarme (tema delicado), una línea para mí. Si no, vacío.' },
+    reason: { type: 'string', description: 'Si action=disclose: por qué, en una línea. Si no, vacío.' },
+    alert: { type: 'string', description: 'Si respondes un tema delicado, una línea para mi registro. Si no, vacío.' },
+    urgent: { type: 'boolean', description: 'true solo si es una emergencia real (ver reglas). Si no, false.' },
   },
 };
 
@@ -189,7 +195,8 @@ export async function decide(
     case 'reply': {
       const msgs = (input.messages ?? []).map((m: string) => String(m).trim()).filter(Boolean).slice(0, 3);
       const alert = String(input.alert ?? '').trim() || undefined;
-      return msgs.length ? { action: 'reply', messages: msgs, alert } : { action: 'handoff', reason: 'respuesta vacía' };
+      if (!msgs.length) throw new NoAnswer('respuesta vacía');
+      return { action: 'reply', messages: msgs, alert, urgent: !!input.urgent };
     }
     case 'react':
       return input.reaction ? { action: 'react', reaction: String(input.reaction).trim() } : { action: 'wait' };
@@ -198,7 +205,7 @@ export async function decide(
     case 'disclose':
       return { action: 'disclose', direct: !!input.direct, reason: String(input.reason ?? '') };
     default:
-      return { action: 'handoff', reason: String(input.reason ?? 'sin motivo') };
+      throw new NoAnswer(`acción desconocida: ${String(input.action)}`);
   }
 }
 
