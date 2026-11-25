@@ -28,15 +28,15 @@ Mantén **1 réplica**: solo un proceso puede tener la sesión. Igual hay un loc
 
 - Panel: el interruptor. Apagar **cancela la cola** y el worker vuelve a revisar el estado justo antes de escribir y antes de cada mensaje.
 - Desde WhatsApp, en tu chat contigo mismo: `/stop`, `/start`, `/pause 60`, `/status`.
-- Si le escribes tú desde el celular, el bot se pausa solo (30 min por defecto) y descarta lo que tenía en cola.
+- Si le escribes tú desde el celular, el bot **no se apaga**: descarta lo que tenía listo y te da 2 min (ajustable) para seguir tú. Solo vuelve a responder si te quedas callado y ella sigue esperando.
 
 ## Cuándo no responde
 
-Te avisa en tu chat contigo mismo y lo deja para ti cuando: ella está molesta o es una discusión, salud o algo emocionalmente fuerte, hay que comprometerse a algo (planes con fecha, dinero), te pide llamar o verse, pregunta si es un bot, o manda una nota de voz.
+Te avisa en tu chat contigo mismo y lo deja para ti cuando: es una emergencia real, te pide llamar o verse ahora, pregunta si es un bot, o manda una nota de voz. Por defecto responde solo (y te avisa) cuando está triste o "se siente mal"; peleas y planes con fecha o dinero se activan en Ajustes.
 
 ## Comportamiento "humano"
 
-- Espera 20–60 s de silencio para responder todo junto, luego 10–120 s más.
+- Espera 8–25 s de silencio para responder todo junto, luego 5–45 s más.
 - Marca leído, muestra "escribiendo…" proporcional al largo, divide en 1–3 mensajes si tú escribes así.
 - No responde en tus horas de sueño (1–7 a. m. por defecto); esas respuestas salen al "despertar".
 - No aparece "en línea" todo el tiempo (`markOnlineOnConnect: false`).

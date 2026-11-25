@@ -54,6 +54,7 @@ async function tick() {
     // Checked right before doing anything visible: the kill switch always wins.
     if (!(await canSend())) return finish(job.id, 'cancelled', 'switch off at send time');
     if (await sheWroteSince(job.created_at)) return finish(job.id, 'cancelled', 'stale: she wrote again');
+    if (await youWroteSince(job.created_at)) return finish(job.id, 'cancelled', 'you answered yourself');
 
     if (offlineTimer) clearTimeout(offlineTimer);
     await wa.presence('available');
@@ -73,8 +74,8 @@ async function tick() {
     const parts: string[] = job.parts ?? [];
     for (let i = 0; i < parts.length; i++) {
       if (!(await canSend())) return finish(job.id, 'cancelled', `switch off after ${i} part(s)`);
-      if (await sheWroteSince(job.created_at)) {
-        // She wrote again: stop here and let the next reply take her new message into account.
+      if ((await sheWroteSince(job.created_at)) || (await youWroteSince(job.created_at))) {
+        // She wrote again, or you jumped in: stop here so nobody talks over anybody.
         await wa.presence('paused');
         return finish(job.id, i === 0 ? 'cancelled' : 'sent', `stopped after ${i} part(s): she wrote`);
       }
@@ -105,6 +106,11 @@ async function tick() {
   } finally {
     busy = false;
   }
+}
+
+async function youWroteSince(t: Date) {
+  const r = await q(`select 1 from messages where from_me and sent_by = 'human' and source = 'live' and ts > $1 limit 1`, [t]);
+  return (r.rowCount ?? 0) > 0;
 }
 
 async function sheWroteSince(t: Date) {

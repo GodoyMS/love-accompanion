@@ -3,7 +3,7 @@ import { kvGet, kvSet, q, logEvent } from './db.js';
 export interface Settings {
   /** Master kill switch. false = the bot never sends anything. */
   enabled: boolean;
-  /** ISO date; while in the future the bot is paused (manual pause or auto takeover). */
+  /** ISO date; while in the future the bot is paused (only via panel or /pause). */
   pausedUntil: string | null;
   /** Seconds of silence from her before we consider her "done typing". */
   debounceSec: [number, number];
@@ -11,8 +11,11 @@ export interface Settings {
   replyDelaySec: [number, number];
   /** Local hours when "you" are asleep, e.g. [0, 7] = midnight to 7am. */
   quietHours: [number, number] | null;
-  /** Minutes the bot stays paused after you write to her yourself. */
-  takeoverMinutes: number;
+  /**
+   * When you write to her yourself, the bot stays ON but gives you this many minutes:
+   * it only answers her if you've been silent that long and she's still waiting.
+   */
+  handBackMinutes: number;
   /** Which sensitive topics the bot answers on its own (it always alerts you too). */
   autonomy: {
     /** Sadness, tiredness, "me siento mal", stress, a bad day. */
@@ -30,7 +33,7 @@ export const DEFAULT_SETTINGS: Settings = {
   debounceSec: [8, 25],
   replyDelaySec: [5, 45],
   quietHours: [1, 7],
-  takeoverMinutes: 30,
+  handBackMinutes: 2,
   autonomy: { feelings: true, conflicts: false, plans: false },
 };
 
@@ -42,6 +45,7 @@ export async function getSettings(): Promise<Settings> {
     // Old, slower defaults that were never customised → move to the faster ones.
     if (String(saved.debounceSec) === '20,60') delete saved.debounceSec;
     if (String(saved.replyDelaySec) === '10,120') delete saved.replyDelaySec;
+    delete (saved as any).takeoverMinutes; // replaced by handBackMinutes (no more auto-pause)
     cache = { ...DEFAULT_SETTINGS, ...saved, autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) } };
   }
   return cache;

@@ -7,7 +7,7 @@ type Settings = {
   debounceSec: [number, number];
   replyDelaySec: [number, number];
   quietHours: [number, number] | null;
-  takeoverMinutes: number;
+  handBackMinutes: number;
   autonomy: { feelings: boolean; conflicts: boolean; plans: boolean };
 };
 type Status = {
@@ -382,8 +382,9 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
           <input type="number" min={0} max={23} value={s.quietHours?.[1] ?? ''} placeholder="—" onChange={(e) => setS({ ...s, quietHours: [s.quietHours?.[0] ?? 1, num(e.target.value)] })} /> h
         </div>
       </label>
-      <label>Pausa automática cuando escribes tú (min)
-        <input type="number" value={s.takeoverMinutes} onChange={(e) => setS({ ...s, takeoverMinutes: num(e.target.value) })} />
+      <label>Si le escribes tú, minutos que espera a que sigas tú antes de volver a responder
+        <input type="number" value={s.handBackMinutes} onChange={(e) => setS({ ...s, handBackMinutes: num(e.target.value) })} />
+        <span className="muted small">El bot no se apaga: si contestas tú, descarta lo que tenía listo.</span>
       </label>
       <fieldset className="autonomy">
         <legend>Temas delicados que responde solo (y te avisa)</legend>

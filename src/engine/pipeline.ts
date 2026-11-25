@@ -78,6 +78,16 @@ async function think() {
     const s = await getSettings();
     const last = ctx.pending[ctx.pending.length - 1];
     let sendAt = new Date(Date.now() + rand(s.replyDelaySec[0], s.replyDelaySec[1]) * 1000);
+    // You're chatting with her yourself: give you room. The bot only steps in if you go quiet
+    // and she's still waiting; if you answer first, the sender drops this reply.
+    const lastManual = await lastManualMessageAt();
+    if (lastManual) {
+      const handBack = new Date(lastManual.getTime() + s.handBackMinutes * 60_000 + rand(5, 30) * 1000);
+      if (handBack > sendAt) {
+        sendAt = handBack;
+        console.log('[think] you were active recently, waiting for you first');
+      }
+    }
     const wake = quietHoursEnd(sendAt, s.quietHours);
     if (wake) sendAt = new Date(wake.getTime() + rand(5, 40) * 60_000);
 
@@ -98,7 +108,7 @@ async function think() {
             await kvSet('last_alert_at', Date.now());
             const at = sendAt.toLocaleTimeString('es-PE', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' });
             await wa.notifySelf(
-              `Tema delicado, lo estoy llevando yo: ${d.alert}\n\nElla: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\nVoy a responder a las ${at}: "${d.messages.join(' / ')}"\n\nSi quieres tomarla tú, escríbele y me aparto (o /pause 60). No te vuelvo a avisar de esto en 30 min.`,
+              `Tema delicado, lo estoy llevando yo: ${d.alert}\n\nElla: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\nVoy a responder a las ${at}: "${d.messages.join(' / ')}"\n\nSi le escribes tú antes, no envío nada y te dejo llevar la conversación mientras estés activo. No te vuelvo a avisar de esto en 30 min.`,
             );
           }
         }
@@ -137,12 +147,25 @@ async function handoff(reason: string, preview: string) {
   await wa.notifySelf(`No le respondí, te toca a ti: ${reason}\n\nElla: "${preview.slice(0, 300)}"`);
 }
 
-/** You wrote to her from your phone: step aside so two "you"s never talk over each other. */
+/**
+ * You wrote to her from your phone. The bot stays ON: whatever it had queued is now stale
+ * (you answered), so drop it; her next message gets the usual treatment, with the
+ * hand-back window giving you the first chance to answer.
+ */
 export async function onManualReply(_p: Parsed) {
   if (timer) clearTimeout(timer);
   timer = null;
-  const s = await getSettings();
-  await pauseFor(s.takeoverMinutes, 'escribiste tú');
+  inboxVersion++; // anything being generated right now is for a conversation you already took over
+  const n = await cancelPending('you answered yourself');
+  console.log(`[manual] you wrote to her${n ? `, dropped ${n} queued reply(ies)` : ''}`);
+  await logEvent('manual', n ? `cancelled ${n}` : undefined);
+}
+
+async function lastManualMessageAt(): Promise<Date | null> {
+  const r = await q(
+    `select max(ts) as t from messages where from_me and sent_by = 'human' and source = 'live' and ts > now() - interval '1 hour'`,
+  );
+  return r.rows[0]?.t ? new Date(r.rows[0].t) : null;
 }
 
 export async function onSelfCommand(text: string) {
@@ -178,6 +201,13 @@ export async function onSelfCommand(text: string) {
 
 /** After a restart, pick up anything she sent in the last couple of hours that never got an answer. */
 export async function resumeOnBoot() {
+  // Older versions auto-paused when you typed; lift that kind of pause (never a manual one).
+  const lastPause = await q(`select detail from events where type = 'paused' order by ts desc limit 1`);
+  if (String(lastPause.rows[0]?.detail ?? '').includes('escribiste tú')) {
+    const { updateSettings } = await import('../settings.js');
+    await updateSettings({ pausedUntil: null });
+    console.log('[boot] lifted the old auto-pause');
+  }
   const r = await q(
     `select count(*)::int n from messages
      where not from_me and ts > now() - interval '2 hours'
