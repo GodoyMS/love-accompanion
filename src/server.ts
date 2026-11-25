@@ -10,6 +10,7 @@ import { config, missingConfig } from './config.js';
 import { kvGet, kvSet, q } from './db.js';
 import { DEFAULT_PROFILE, describeStyle } from './engine/context.js';
 import { runMemoryExtraction } from './engine/memory.js';
+import { sttProvider } from './engine/transcribe.js';
 import { importExport, readExportFile } from './importer/import.js';
 import { computeStyle, type StyleProfile } from './importer/style.js';
 import { cancelPending, getSettings, pauseFor, setEnabled, updateSettings, type Settings } from './settings.js';
@@ -80,6 +81,7 @@ export async function buildServer() {
         wa: { connected: wa.connected, me: wa.me.pn, qr: wa.qrDataUrl, status: wa.lastStatus },
         partner: config.partnerNumber ? `+${config.partnerNumber}` : null,
         missing: missingConfig,
+        stt: sttProvider(),
         pending: pending.rows,
         counts: counts.rows[0],
         events: events.rows,

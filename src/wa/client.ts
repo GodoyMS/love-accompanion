@@ -317,6 +317,20 @@ class WhatsApp {
     return { waId: raw.key.id, fromMe: !!raw.key.fromMe, kind: d.kind, body: d.body, ts, key: raw.key, hasVisual: !!d.visual };
   }
 
+  /** Raw audio/video bytes of a voice note or video, for transcription. */
+  async mediaOf(raw: WAMessage): Promise<{ data: Buffer; mimetype: string; seconds: number } | null> {
+    const c = normalizeMessageContent(raw.message);
+    const m = c?.audioMessage ?? c?.ptvMessage ?? (c?.videoMessage?.gifPlayback ? null : c?.videoMessage);
+    if (!m) return null;
+    try {
+      const data = await downloadMediaMessage(raw, 'buffer', {});
+      return { data, mimetype: m.mimetype ?? 'audio/ogg', seconds: m.seconds ?? 0 };
+    } catch (e) {
+      console.log('[wa] could not download audio:', (e as Error)?.message);
+      return null;
+    }
+  }
+
   /** The image Claude should see for this message (photo, sticker, video thumbnail, link preview). */
   async visualOf(raw: WAMessage): Promise<{ data: string; mediaType: string; label: string } | null> {
     const d = describe(raw.message);

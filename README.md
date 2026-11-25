@@ -17,6 +17,7 @@ WhatsApp (Baileys, como WhatsApp Web) ─▶ guarda mensaje ─▶ espera a que 
    - `ANTHROPIC_API_KEY`
    - `PARTNER_NUMBER`: número de ella con código de país, solo dígitos (`51987654321`)
    - Opcionales: `SESSION_SECRET`, `CLAUDE_MODEL`, `CLAUDE_FAST_MODEL`, `TZ_NAME` (por defecto `America/Lima`)
+   - Notas de voz: `ELEVENLABS_API_KEY` u `OPENAI_API_KEY` para transcribirlas (sin ninguna, el bot le pide que escriba)
 3. Genera un dominio público, abre el panel y escanea el QR desde **WhatsApp → Dispositivos vinculados**.
 4. **Importar**: exporta el chat con ella (sin archivos) y súbelo. Al vincular también llega parte del historial solo.
 5. **Perfil**: llena nombres, apodos, gustos, fechas, bromas internas y temas a evitar.

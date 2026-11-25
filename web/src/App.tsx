@@ -16,6 +16,7 @@ type Status = {
   wa: { connected: boolean; me: string | null; qr: string | null; status: string };
   partner: string | null;
   missing: string[];
+  stt: 'elevenlabs' | 'openai' | null;
   pending: { id: number; send_at: string; parts: string[]; reaction: string | null }[];
   counts: { total: number; by_bot: number; first_ts: string | null };
   events: { ts: string; type: string; detail: string | null }[];
@@ -62,7 +63,12 @@ export function App() {
           Falta configurar en Railway: <b>{status.missing.join(', ')}</b>. El panel y el QR funcionan, pero no responderá hasta que estén.
         </section>
       )}
-      {status.partner && <p className="muted small">Escuchando solo a {status.partner}</p>}
+      {status.partner && (
+        <p className="muted small">
+          Escuchando solo a {status.partner} ·{' '}
+          {status.stt ? `notas de voz: transcribe con ${status.stt === 'elevenlabs' ? 'ElevenLabs' : 'OpenAI'}` : 'notas de voz: sin transcripción (agrega ELEVENLABS_API_KEY u OPENAI_API_KEY)'}
+        </p>
+      )}
 
       <KillSwitch status={status} onChange={refresh} />
 

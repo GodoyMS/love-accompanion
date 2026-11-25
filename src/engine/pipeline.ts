@@ -7,6 +7,7 @@ import { quietHoursEnd, rand } from '../time.js';
 import { wa, type Parsed } from '../wa/client.js';
 import { buildContext } from './context.js';
 import { decide } from './llm.js';
+import { sttProvider, transcribe } from './transcribe.js';
 
 const log = pino({ level: config.logLevel });
 
@@ -27,7 +28,30 @@ export async function onPartnerMessage(p: Parsed, raw: WAMessage) {
   console.log(`[in] message from partner (${p.kind})`);
   inboxVersion++;
   await cancelPending('she wrote again');
+  if (p.kind === 'audio' || p.kind === 'video') {
+    // Hold any pending think until we know what she said.
+    if (timer) clearTimeout(timer);
+    timer = null;
+    await transcribeInto(p, raw);
+  }
   await scheduleThink();
+}
+
+/** Turn her voice note / video note into text so the bot can answer what she actually said. */
+async function transcribeInto(p: Parsed, raw: WAMessage) {
+  if (!sttProvider()) return;
+  const media = await wa.mediaOf(raw);
+  if (!media || media.seconds > 300) return; // skip long videos
+  try {
+    const t0 = Date.now();
+    const text = await transcribe(media.data, media.mimetype);
+    if (!text) return;
+    await q(`update messages set body = $2 where wa_id = $1`, [p.waId, `${p.body} «${text}»`]);
+    console.log(`[stt] transcribed ${media.seconds}s in ${Date.now() - t0}ms`);
+  } catch (e) {
+    console.log('[stt] failed:', (e as Error)?.message);
+    await logEvent('error', `stt: ${(e as Error)?.message}`);
+  }
 }
 
 async function scheduleThink() {
