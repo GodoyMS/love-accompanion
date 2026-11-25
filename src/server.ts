@@ -6,7 +6,7 @@ import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import fstatic from '@fastify/static';
 import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
-import { config } from './config.js';
+import { config, missingConfig } from './config.js';
 import { kvGet, kvSet, q } from './db.js';
 import { DEFAULT_PROFILE, describeStyle } from './engine/context.js';
 import { runMemoryExtraction } from './engine/memory.js';
@@ -78,6 +78,8 @@ export async function buildServer() {
         settings: s,
         paused: !!s.pausedUntil && new Date(s.pausedUntil) > new Date(),
         wa: { connected: wa.connected, me: wa.me.pn, qr: wa.qrDataUrl },
+        partner: config.partnerNumber ? `+${config.partnerNumber}` : null,
+        missing: missingConfig,
         pending: pending.rows,
         counts: counts.rows[0],
         events: events.rows,

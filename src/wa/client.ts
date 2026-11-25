@@ -42,7 +42,7 @@ class WhatsApp {
   qrDataUrl: string | null = null;
   connected = false;
   me: { pn: string | null; lid: string | null } = { pn: null, lid: null };
-  private partnerJids = new Set<string>([partnerPnJid]);
+  private partnerJids = new Set<string>(partnerPnJid ? [partnerPnJid] : []);
   /** Ids of messages the bot sent, so we can tell them apart from you typing on your phone. */
   private botIds = new Set<string>();
   private sentCache = new Map<string, proto.IMessage>();
@@ -52,8 +52,9 @@ class WhatsApp {
 
   async start(handler: Handler) {
     this.handler = handler;
-    const lid = await kvGet<string | null>('partner_lid', null);
-    if (lid) this.partnerJids.add(lid);
+    // The learned LID belongs to whichever number was configured when it was learned.
+    const saved = await kvGet<{ pn: string; lid: string } | string | null>('partner_lid', null);
+    if (saved && typeof saved === 'object' && saved.pn === partnerPnJid) this.partnerJids.add(saved.lid);
     await this.connect();
   }
 
@@ -184,6 +185,7 @@ class WhatsApp {
 
   private async learnPartnerLid() {
     try {
+      if (!partnerPnJid) return;
       const lid = await this.sock?.signalRepository.lidMapping.getLIDForPN(partnerPnJid);
       if (lid) await this.rememberPartnerLid(lid);
     } catch {
@@ -195,7 +197,7 @@ class WhatsApp {
     const norm = jidNormalizedUser(lid);
     if (this.partnerJids.has(norm)) return;
     this.partnerJids.add(norm);
-    await kvSet('partner_lid', norm);
+    await kvSet('partner_lid', { pn: partnerPnJid, lid: norm });
   }
 
   textOf(raw: WAMessage): string | null {

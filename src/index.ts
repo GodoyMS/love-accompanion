@@ -1,6 +1,6 @@
 import pg from 'pg';
 import { config } from './config.js';
-import { logEvent, migrate, sslFor } from './db.js';
+import { archiveIfPartnerChanged, logEvent, migrate, sslFor } from './db.js';
 import { startMemoryJob } from './engine/memory.js';
 import { onManualReply, onPartnerMessage, onSelfCommand, resumeOnBoot } from './engine/pipeline.js';
 import { recoverStuck, startSender } from './engine/sender.js';
@@ -9,6 +9,7 @@ import { wa } from './wa/client.js';
 
 async function main() {
   await migrate();
+  if (config.partnerNumber) await archiveIfPartnerChanged(config.partnerNumber);
 
   // The panel (and kill switch) come up first, even while we wait for the WhatsApp lock.
   const app = await buildServer();

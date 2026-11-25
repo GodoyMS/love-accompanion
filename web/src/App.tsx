@@ -13,6 +13,8 @@ type Status = {
   settings: Settings;
   paused: boolean;
   wa: { connected: boolean; me: string | null; qr: string | null };
+  partner: string | null;
+  missing: string[];
   pending: { id: number; send_at: string; parts: string[]; reaction: string | null }[];
   counts: { total: number; by_bot: number; first_ts: string | null };
   events: { ts: string; type: string; detail: string | null }[];
@@ -53,6 +55,13 @@ export function App() {
           {status.wa.connected ? `WhatsApp +${status.wa.me?.split('@')[0]}` : 'WhatsApp desconectado'}
         </span>
       </header>
+
+      {status.missing.length > 0 && (
+        <section className="card notice">
+          Falta configurar en Railway: <b>{status.missing.join(', ')}</b>. El panel y el QR funcionan, pero no responderá hasta que estén.
+        </section>
+      )}
+      {status.partner && <p className="muted small">Escuchando solo a {status.partner}</p>}
 
       <KillSwitch status={status} onChange={refresh} />
 

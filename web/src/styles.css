@@ -83,3 +83,5 @@ textarea { font: 13px/1.5 ui-monospace, 'SF Mono', Menlo, monospace; resize: ver
 .steps { margin: 0; padding-left: 18px; }
 .form label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
 hr { border: 0; border-top: 1px solid var(--line); width: 100%; }
+
+.notice { border-color: var(--warn); color: var(--warn); font-size: 14px; }

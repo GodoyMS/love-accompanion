@@ -11,13 +11,20 @@ export const config = {
   databaseUrl: req('DATABASE_URL'),
   adminPassword: req('ADMIN_PASSWORD'),
   sessionSecret: process.env.SESSION_SECRET ?? req('ADMIN_PASSWORD') + ':love-accompanion',
-  anthropicKey: req('ANTHROPIC_API_KEY'),
+  /** Optional at boot so the panel (and QR linking) work before you set it. */
+  anthropicKey: process.env.ANTHROPIC_API_KEY ?? '',
   model: process.env.CLAUDE_MODEL ?? 'claude-sonnet-5-5',
   fastModel: process.env.CLAUDE_FAST_MODEL ?? 'claude-haiku-5-5',
   /** Her number, international format, digits only (e.g. 51987654321). */
-  partnerNumber: digits(req('PARTNER_NUMBER')),
+  partnerNumber: digits(process.env.PARTNER_NUMBER ?? ''),
   timezone: process.env.TZ_NAME ?? 'America/Lima',
   logLevel: process.env.LOG_LEVEL ?? 'info',
 };
 
-export const partnerPnJid = `${config.partnerNumber}@s.whatsapp.net`;
+export const partnerPnJid = config.partnerNumber ? `${config.partnerNumber}@s.whatsapp.net` : '';
+
+/** Env vars the bot needs before it can reply. Shown in the panel. */
+export const missingConfig = [
+  !config.anthropicKey && 'ANTHROPIC_API_KEY',
+  !config.partnerNumber && 'PARTNER_NUMBER',
+].filter(Boolean) as string[];

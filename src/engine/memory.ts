@@ -2,7 +2,7 @@ import pino from 'pino';
 import { config } from '../config.js';
 import { kvGet, kvSet, logEvent, q } from '../db.js';
 import { localStamp } from '../time.js';
-import { extractMemories } from './llm.js';
+import { extractMemories, llmReady } from './llm.js';
 
 const log = pino({ level: config.logLevel });
 
@@ -13,6 +13,7 @@ export function startMemoryJob() {
 }
 
 async function maybeRun() {
+  if (!llmReady()) return;
   const last = await kvGet<string | null>('memory_last_run', null);
   if (last && Date.now() - new Date(last).getTime() < 22 * 3600_000) return;
   try {

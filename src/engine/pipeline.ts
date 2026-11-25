@@ -1,6 +1,6 @@
 import type { WAMessage } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { config } from '../config.js';
+import { config, missingConfig } from '../config.js';
 import { logEvent, q } from '../db.js';
 import { canSend, cancelPending, getSettings, pauseFor, setEnabled } from '../settings.js';
 import { quietHoursEnd, rand } from '../time.js';
@@ -40,7 +40,7 @@ async function think() {
   }
   generating = true;
   try {
-    if (!(await canSend())) return;
+    if (!(await canSend()) || missingConfig.length) return;
     const ctx = await buildContext();
     if (!ctx.pending.length) return;
 

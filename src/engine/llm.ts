@@ -1,9 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { config } from '../config.js';
+import { config, missingConfig } from '../config.js';
 import { localStamp } from '../time.js';
 import type { buildContext } from './context.js';
 
-export const anthropic = new Anthropic({ apiKey: config.anthropicKey });
+let client: Anthropic | null = null;
+const anthropic = {
+  get messages() {
+    if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY no está configurada');
+    client ??= new Anthropic({ apiKey: config.anthropicKey });
+    return client.messages;
+  },
+};
+export const llmReady = () => !missingConfig.includes('ANTHROPIC_API_KEY');
 
 export type Decision =
   | { action: 'reply'; messages: string[] }
