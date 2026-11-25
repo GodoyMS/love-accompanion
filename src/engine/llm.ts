@@ -17,7 +17,8 @@ export type Decision =
   | { action: 'reply'; messages: string[]; alert?: string }
   | { action: 'react'; reaction: string }
   | { action: 'wait' }
-  | { action: 'handoff'; reason: string };
+  | { action: 'handoff'; reason: string }
+  | { action: 'disclose'; direct: boolean; reason: string };
 
 const STYLE_RULES = `Eres el "yo" de esta conversación de WhatsApp: escribes como yo le escribo a mi enamorada, en primera persona, desde mi número.
 
@@ -40,7 +41,6 @@ export interface Autonomy {
 function rules(a: Autonomy) {
   const handoff = [
     '- Una emergencia clara: está en peligro, habla de hacerse daño, un accidente, le cuesta respirar, sangrado, se desmayó, dolor muy fuerte que no cede, o pide ayuda urgente.',
-    '- Pregunta si es un bot, una IA o si de verdad soy yo.',
     '- Me pide llamar ahora, verla ahora, o algo que yo tendría que hacer en persona.',
     '- Te pide un dato concreto que solo yo sé y no está en el perfil/memorias/transcript (ej. "¿a qué hora llegas?", "¿pagaste la luz?").',
   ];
@@ -85,6 +85,11 @@ Cuando manda algo que no es texto:
 - "(respondiendo a «…»)" indica a qué mensaje está respondiendo. "[reenviado]" es algo que reenvió, no lo escribió ella.
 - Si editó o eliminó un mensaje, responde a lo que dice ahora; no comentes que lo borró salvo que sea obvio que lo esperaría.
 
+Usa "disclose" (nunca lo niegues ni inventes una excusa) cuando:
+- Duda de que sea yo: nota algo raro en mi voz o en cómo escribo, pregunta "¿eres tú?", "¿quién eres?", "¿qué le pasó a tu voz?". Pon direct=false.
+- Pregunta directamente si es un bot, una IA, un programa o algo automático. Pon direct=true.
+Tú no escribes ese mensaje: se envía un texto ya definido. Deja "messages" vacío.
+
 Usa "react" para mensajes que solo piden un gesto (un "te quiero", una foto bonita, un "llegué"), con un solo emoji que yo usaría.
 Usa "wait" si la conversación ya cerró naturalmente (ej. "ok", "buenas noches" después de que ya me despedí).
 En cualquier otro caso responde normal con "reply" y deja "alert" vacío.`;
@@ -94,9 +99,10 @@ En cualquier otro caso responde normal con "reply" y deja "alert" vacío.`;
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['action', 'messages', 'reaction', 'reason', 'alert'],
+  required: ['action', 'messages', 'reaction', 'reason', 'alert', 'direct'],
   properties: {
-    action: { type: 'string', enum: ['reply', 'react', 'wait', 'handoff'] },
+    action: { type: 'string', enum: ['reply', 'react', 'wait', 'handoff', 'disclose'] },
+    direct: { type: 'boolean', description: 'Solo si action=disclose: true si pregunta directamente si es un bot/IA/programa; false si solo duda de que sea yo.' },
     messages: {
       type: 'array',
       items: { type: 'string' },
@@ -167,6 +173,8 @@ export async function decide(
       return input.reaction ? { action: 'react', reaction: String(input.reaction).trim() } : { action: 'wait' };
     case 'wait':
       return { action: 'wait' };
+    case 'disclose':
+      return { action: 'disclose', direct: !!input.direct, reason: String(input.reason ?? '') };
     default:
       return { action: 'handoff', reason: String(input.reason ?? 'sin motivo') };
   }

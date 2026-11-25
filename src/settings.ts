@@ -31,6 +31,15 @@ export interface Settings {
   };
   /** How your ElevenLabs voice sounds. */
   voice: VoiceTuning;
+  /** What the bot says when she doubts it's you, or asks straight out if it's a bot. */
+  disclosure: {
+    /** She notices something off ("¿qué le pasó a tu voz?", "¿eres tú?"). */
+    doubtText: string;
+    /** She asks directly if it's a bot / AI / program. Never denied. */
+    directText: string;
+    /** After telling her, the bot stays paused this long (or until you /start). */
+    pauseHours: number;
+  };
 }
 
 export interface VoiceTuning {
@@ -56,6 +65,11 @@ export const DEFAULT_SETTINGS: Settings = {
   autonomy: { feelings: true, health: true, conflicts: false, plans: false },
   // Calm, unhurried, neutral: slower than default, steady, close to your real voice, no dramatization.
   voice: { model: 'eleven_multilingual_v2', speed: 0.9, stability: 0.65, similarity: 0.9, style: 0 },
+  disclosure: {
+    doubtText: 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Ya le aviso para que te escriba él.',
+    directText: 'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Ya le aviso para que te escriba él.',
+    pauseHours: 12,
+  },
 };
 
 let cache: Settings | null = null;
@@ -86,6 +100,7 @@ export async function getSettings(): Promise<Settings> {
       ...saved,
       autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) },
       voice: { ...DEFAULT_SETTINGS.voice, ...(saved.voice ?? {}) },
+      disclosure: { ...DEFAULT_SETTINGS.disclosure, ...(saved.disclosure ?? {}) },
     };
   }
   return cache;

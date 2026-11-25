@@ -123,6 +123,11 @@ async function tick() {
     await wa.presence('paused');
     await finish(job.id, 'sent');
     await logEvent('sent', parts.join(' | ') || job.reaction);
+    if (job.reason === 'disclose') {
+      const { getSettings, pauseFor } = await import('../settings.js');
+      await pauseFor((await getSettings()).disclosure.pauseHours * 60, 'le dijo que no eras tú');
+      console.log('[send] disclosure sent, bot paused');
+    }
     console.log(`[send] sent ${parts.length} message(s)${job.reaction ? ' + reaction' : ''}`);
 
     // Go "offline" a little later, like closing the app.

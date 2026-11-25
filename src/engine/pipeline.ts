@@ -183,6 +183,20 @@ async function think() {
       case 'handoff':
         await handoff(d.reason, ctx.pending.map((m) => m.body).join(' / '));
         break;
+      case 'disclose': {
+        // Tell her the truth (it isn't you), in text, then step aside until you decide.
+        const text = d.direct ? st.disclosure.directText : st.disclosure.doubtText;
+        const at = new Date(Date.now() + rand(st.replyDelaySec[0], st.replyDelaySec[1]) * 1000);
+        await q(
+          `insert into pending_replies (send_at, parts, read_keys, reason) values ($1, $2, $3, 'disclose')`,
+          [at, JSON.stringify([text]), readKeys],
+        );
+        await logEvent('disclose', d.reason);
+        await wa.notifySelf(
+          `Ella ${d.direct ? 'preguntó si es un bot' : 'dudó de que fueras tú'}: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\n\nLe voy a decir: "${text}"\n\nDespués quedo en pausa ${st.disclosure.pauseHours} h. Escríbele tú; cuando quieras que vuelva, mándame /start.`,
+        );
+        break;
+      }
     }
   } catch (e) {
     console.log('[think] failed:', (e as Error)?.stack ?? e);
