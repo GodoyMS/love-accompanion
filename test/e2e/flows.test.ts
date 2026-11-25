@@ -336,6 +336,27 @@ describe('voice', () => {
     assert.match((await transcript()).at(-1)!, /^bot: \[nota de voz 0:03\] «te respondo hablando»$/);
   });
 
+  test('a voice note followed by a text is still answered by voice', async () => {
+    await reset({ debounceSec: [0.3, 0.3] });
+    await her('[nota de voz 0:04]', { kind: 'audio' });
+    await her('¿me escuchaste?');
+    await settle();
+    assert.equal(brain.inputs.length, 1);
+    assert.deepEqual(brain.last.ctx.pending.map((t) => t.kind), ['audio', 'text']);
+    assert.equal(brain.last.voice, true);
+    assert.equal((await queue())[0].kind, 'voice');
+  });
+
+  test('only texts → text, even if she sent a voice note earlier that was already answered', async () => {
+    await her('[nota de voz 0:04]', { kind: 'audio' });
+    await settle();
+    await db.q(`update pending_replies set send_at = now()`);
+    await settle();
+    await her('ok, y tú?');
+    await settle();
+    assert.equal(brain.last.voice, false);
+  });
+
   test('if text-to-speech fails, the same answer goes out as text', async () => {
     speech.speakOk = false;
     brain.next({ action: 'reply', messages: ['hola amor'] });
