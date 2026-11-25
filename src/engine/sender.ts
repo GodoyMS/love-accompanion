@@ -72,6 +72,33 @@ async function tick() {
     }
 
     const parts: string[] = job.parts ?? [];
+
+    if (job.voice) {
+      // "grabando audio…" for about as long as the note, like really recording it.
+      if ((await sheWroteSince(job.created_at)) || (await youWroteSince(job.created_at))) {
+        return finish(job.id, 'cancelled', 'stale before voice note');
+      }
+      await wa.presence('recording');
+      await sleep(Math.min(45_000, (job.voice_seconds ?? 3) * 1000 + rand(500, 2_000)));
+      if (!(await canSend())) {
+        await wa.presence('paused');
+        return finish(job.id, 'cancelled', 'switch off while recording');
+      }
+      const waId = await wa.sendVoice(job.voice, job.voice_seconds ?? 1, job.voice_waveform ? new Uint8Array(job.voice_waveform) : undefined);
+      const secs = job.voice_seconds ?? 0;
+      await q(
+        `insert into messages (wa_id, from_me, sent_by, kind, body, ts, source)
+         values ($1, true, 'bot', 'audio', $2, now(), 'live') on conflict (wa_id) do nothing`,
+        [waId, `[nota de voz ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}] «${parts.join(' ')}»`],
+      );
+      await wa.presence('paused');
+      await finish(job.id, 'sent');
+      await logEvent('sent', `voz: ${parts.join(' ')}`);
+      console.log(`[send] sent a ${secs}s voice note`);
+      offlineTimer = setTimeout(() => void wa.presence('unavailable').catch(() => {}), rand(15_000, 60_000));
+      return;
+    }
+
     for (let i = 0; i < parts.length; i++) {
       if (!(await canSend())) return finish(job.id, 'cancelled', `switch off after ${i} part(s)`);
       if ((await sheWroteSince(job.created_at)) || (await youWroteSince(job.created_at))) {

@@ -11,6 +11,7 @@ import { kvGet, kvSet, q } from './db.js';
 import { DEFAULT_PROFILE, describeStyle } from './engine/context.js';
 import { runMemoryExtraction } from './engine/memory.js';
 import { sttProvider } from './engine/transcribe.js';
+import { voiceReady } from './engine/voice.js';
 import { importExport, readExportFile } from './importer/import.js';
 import { computeStyle, type StyleProfile } from './importer/style.js';
 import { cancelPending, getSettings, pauseFor, setEnabled, updateSettings, type Settings } from './settings.js';
@@ -68,7 +69,7 @@ export async function buildServer() {
     api.get('/api/status', async () => {
       const s = await getSettings();
       const [pending, counts, events] = await Promise.all([
-        q(`select id, send_at, parts, reaction from pending_replies where status = 'pending' order by send_at`),
+        q(`select id, send_at, parts, reaction, voice is not null as is_voice from pending_replies where status = 'pending' order by send_at`),
         q(`select count(*)::int total,
                   count(*) filter (where sent_by = 'bot')::int by_bot,
                   min(ts) first_ts
@@ -82,6 +83,7 @@ export async function buildServer() {
         partner: config.partnerNumber ? `+${config.partnerNumber}` : null,
         missing: missingConfig,
         stt: sttProvider(),
+        voice: voiceReady(),
         pending: pending.rows,
         counts: counts.rows[0],
         events: events.rows,

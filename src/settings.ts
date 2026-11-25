@@ -16,6 +16,8 @@ export interface Settings {
    * it only answers her if you've been silent that long and she's still waiting.
    */
   handBackMinutes: number;
+  /** Answer her voice notes with a voice note in your voice (needs ELEVENLABS_VOICE_ID). */
+  voiceReplies: boolean;
   /** Which sensitive topics the bot answers on its own (it always alerts you too). */
   autonomy: {
     /** Sadness, tiredness, "me siento mal", stress, a bad day. */
@@ -36,6 +38,7 @@ export const DEFAULT_SETTINGS: Settings = {
   replyDelaySec: [5, 45],
   quietHours: null, // off by default: always there for her. Turn on in Ajustes if you want "sleep" hours.
   handBackMinutes: 2,
+  voiceReplies: true,
   autonomy: { feelings: true, health: true, conflicts: false, plans: false },
 };
 

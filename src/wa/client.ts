@@ -357,8 +357,8 @@ class WhatsApp {
     if (keys.length) await this.sock?.readMessages(keys);
   }
 
-  async presence(state: 'available' | 'unavailable' | 'composing' | 'paused') {
-    const to = state === 'composing' || state === 'paused' ? this.partnerTarget : undefined;
+  async presence(state: 'available' | 'unavailable' | 'composing' | 'recording' | 'paused') {
+    const to = state === 'composing' || state === 'recording' || state === 'paused' ? this.partnerTarget : undefined;
     await this.sock?.sendPresenceUpdate(state, to);
   }
 
@@ -367,6 +367,18 @@ class WhatsApp {
     const id = generateMessageIDV2(this.sock.user?.id);
     this.botIds.add(id);
     const sent = await this.sock.sendMessage(this.partnerTarget, { text }, { messageId: id });
+    if (sent?.message) this.sentCache.set(id, sent.message);
+    return id;
+  }
+
+  /** Send a real WhatsApp voice note (the bubble with the waveform, not an audio file). */
+  async sendVoice(ogg: Buffer, seconds: number, waveform?: Uint8Array): Promise<string> {
+    if (!this.sock || !this.connected) throw new Error('WhatsApp not connected');
+    const id = generateMessageIDV2(this.sock.user?.id);
+    this.botIds.add(id);
+    const content: any = { audio: ogg, mimetype: 'audio/ogg; codecs=opus', ptt: true, seconds };
+    if (waveform) content.waveform = waveform;
+    const sent = await this.sock.sendMessage(this.partnerTarget, content, { messageId: id });
     if (sent?.message) this.sentCache.set(id, sent.message);
     return id;
   }

@@ -40,6 +40,10 @@ create table if not exists pending_replies (
 );
 create index if not exists pending_status_idx on pending_replies (status, send_at);
 
+alter table pending_replies add column if not exists voice bytea;
+alter table pending_replies add column if not exists voice_seconds int;
+alter table pending_replies add column if not exists voice_waveform bytea;
+
 create table if not exists memories (
   id          bigserial primary key,
   created_at  timestamptz not null default now(),

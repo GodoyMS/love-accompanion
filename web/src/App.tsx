@@ -8,6 +8,7 @@ type Settings = {
   replyDelaySec: [number, number];
   quietHours: [number, number] | null;
   handBackMinutes: number;
+  voiceReplies: boolean;
   autonomy: { feelings: boolean; health: boolean; conflicts: boolean; plans: boolean };
 };
 type Status = {
@@ -17,7 +18,8 @@ type Status = {
   partner: string | null;
   missing: string[];
   stt: 'elevenlabs' | 'openai' | null;
-  pending: { id: number; send_at: string; parts: string[]; reaction: string | null }[];
+  voice: boolean;
+  pending: { id: number; send_at: string; parts: string[]; reaction: string | null; is_voice: boolean }[];
   counts: { total: number; by_bot: number; first_ts: string | null };
   events: { ts: string; type: string; detail: string | null }[];
 };
@@ -67,6 +69,8 @@ export function App() {
         <p className="muted small">
           Escuchando solo a {status.partner} ·{' '}
           {status.stt ? `notas de voz: transcribe con ${status.stt === 'elevenlabs' ? 'ElevenLabs' : 'OpenAI'}` : 'notas de voz: sin transcripción (agrega ELEVENLABS_API_KEY u OPENAI_API_KEY)'}
+          {' · '}
+          {status.voice ? 'responde audios con tu voz' : 'respuestas por voz: falta ELEVENLABS_VOICE_ID'}
         </p>
       )}
 
@@ -191,7 +195,7 @@ function Queue({ status, onChange }: { status: Status; onChange: () => void }) {
           <div className="muted small">{clock(p.send_at)}</div>
           <div className="grow">
             {p.reaction && <span className="bubble me">{p.reaction}</span>}
-            {p.parts.map((t, i) => <div key={i} className="bubble me bot">{t}</div>)}
+            {p.parts.map((t, i) => <div key={i} className="bubble me bot">{p.is_voice ? '🎙️ ' : ''}{t}</div>)}
           </div>
           <div className="row gap">
             <button className="link" onClick={async () => { await api(`/api/pending/${p.id}/now`, { method: 'POST' }); onChange(); }}>
@@ -386,6 +390,10 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
       </label>
       <label>Demora extra antes de responder (seg)
         <div className="row gap"><input type="number" value={s.replyDelaySec[0]} onChange={(e) => pair('replyDelaySec', 0, e.target.value)} /> a <input type="number" value={s.replyDelaySec[1]} onChange={(e) => pair('replyDelaySec', 1, e.target.value)} /></div>
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={s.voiceReplies} onChange={(e) => setS({ ...s, voiceReplies: e.target.checked })} />
+        Si ella manda nota de voz, responder con nota de voz (tu voz de ElevenLabs)
       </label>
       <label className="check">
         <input type="checkbox" checked={!!s.quietHours} onChange={(e) => setS({ ...s, quietHours: e.target.checked ? [1, 7] : null })} />

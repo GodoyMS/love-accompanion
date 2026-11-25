@@ -8,6 +8,7 @@ import { wa, type Parsed } from '../wa/client.js';
 import { buildContext } from './context.js';
 import { decide } from './llm.js';
 import { sttProvider, transcribe } from './transcribe.js';
+import { makeVoiceNote, voiceReady } from './voice.js';
 
 const log = pino({ level: config.logLevel });
 
@@ -84,7 +85,11 @@ async function think() {
 
     console.log(`[think] ${ctx.pending.length} unanswered message(s), asking Claude`);
     const version = inboxVersion;
-    const d = await decide(ctx, images, (await getSettings()).autonomy);
+    const st = await getSettings();
+    // She spoke to you → answer by voice (if enabled and your ElevenLabs voice is set up).
+    const lastIn = ctx.pending[ctx.pending.length - 1];
+    const byVoice = st.voiceReplies && voiceReady() && lastIn?.kind === 'audio';
+    const d = await decide(ctx, images, st.autonomy, undefined, byVoice);
     console.log(`[think] decision: ${d.action}`);
     // She wrote while we were thinking: drop this answer, the next pass sees everything.
     if (rerun || version !== inboxVersion) {
@@ -124,9 +129,32 @@ async function think() {
 
     switch (d.action) {
       case 'reply': {
+        let voice: Awaited<ReturnType<typeof makeVoiceNote>> | null = null;
+        if (byVoice) {
+          try {
+            const t0 = Date.now();
+            voice = await makeVoiceNote(d.messages.join(' '));
+            console.log(`[voice] generated ${voice.seconds}s voice note in ${Date.now() - t0}ms`);
+            // A person needs at least as long as the note to record it.
+            const minAt = Date.now() + (voice.seconds + rand(3, 10)) * 1000;
+            if (sendAt.getTime() < minAt) sendAt = new Date(minAt);
+          } catch (e) {
+            console.log('[voice] failed, sending text instead:', (e as Error)?.message);
+            await logEvent('error', `voice: ${(e as Error)?.message}`);
+          }
+        }
         await q(
-          `insert into pending_replies (send_at, parts, read_keys, reason) values ($1, $2, $3, 'reply')`,
-          [sendAt, JSON.stringify(d.messages), readKeys],
+          `insert into pending_replies (send_at, parts, read_keys, reason, voice, voice_seconds, voice_waveform)
+           values ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            sendAt,
+            JSON.stringify(voice ? [d.messages.join(' ')] : d.messages),
+            readKeys,
+            voice ? 'voice' : 'reply',
+            voice?.ogg ?? null,
+            voice?.seconds ?? null,
+            voice ? Buffer.from(voice.waveform) : null,
+          ],
         );
         if (d.alert) {
           await logEvent('alert', d.alert);
