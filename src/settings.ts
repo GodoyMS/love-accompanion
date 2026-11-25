@@ -13,6 +13,15 @@ export interface Settings {
   quietHours: [number, number] | null;
   /** Minutes the bot stays paused after you write to her yourself. */
   takeoverMinutes: number;
+  /** Which sensitive topics the bot answers on its own (it always alerts you too). */
+  autonomy: {
+    /** Sadness, tiredness, "me siento mal", stress, a bad day. */
+    feelings: boolean;
+    /** She's upset with you, a complaint or an argument. */
+    conflicts: boolean;
+    /** Committing to plans with a date/time, money or promises. */
+    plans: boolean;
+  };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,12 +31,16 @@ export const DEFAULT_SETTINGS: Settings = {
   replyDelaySec: [10, 120],
   quietHours: [1, 7],
   takeoverMinutes: 30,
+  autonomy: { feelings: true, conflicts: false, plans: false },
 };
 
 let cache: Settings | null = null;
 
 export async function getSettings(): Promise<Settings> {
-  if (!cache) cache = { ...DEFAULT_SETTINGS, ...(await kvGet<Partial<Settings>>('settings', {})) };
+  if (!cache) {
+    const saved = await kvGet<Partial<Settings>>('settings', {});
+    cache = { ...DEFAULT_SETTINGS, ...saved, autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) } };
+  }
   return cache;
 }
 

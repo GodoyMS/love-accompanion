@@ -60,7 +60,7 @@ async function think() {
     ).filter((x): x is NonNullable<typeof x> => !!x);
 
     console.log(`[think] ${ctx.pending.length} unanswered message(s), asking Claude`);
-    const d = await decide(ctx, images);
+    const d = await decide(ctx, images, (await getSettings()).autonomy);
     console.log(`[think] decision: ${d.action}`);
     if (rerun) return; // she wrote while we were thinking; the next pass will handle everything
 
@@ -82,6 +82,10 @@ async function think() {
           `insert into pending_replies (send_at, parts, read_keys, reason) values ($1, $2, $3, 'reply')`,
           [sendAt, JSON.stringify(d.messages), readKeys],
         );
+        if (d.alert) {
+          await logEvent('alert', d.alert);
+          await wa.notifySelf(`Le respondí yo, pero para que sepas: ${d.alert}\n\nElla: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\nYo: "${d.messages.join(' / ')}"\n\nSi prefieres responder tú, escríbele ahora y me aparto (o /pause 60).`);
+        }
         break;
       }
       case 'react':

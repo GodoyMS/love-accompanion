@@ -14,12 +14,12 @@ const anthropic = {
 export const llmReady = () => !missingConfig.includes('ANTHROPIC_API_KEY');
 
 export type Decision =
-  | { action: 'reply'; messages: string[] }
+  | { action: 'reply'; messages: string[]; alert?: string }
   | { action: 'react'; reaction: string }
   | { action: 'wait' }
   | { action: 'handoff'; reason: string };
 
-const RULES = `Eres el "yo" de esta conversación de WhatsApp: escribes como yo le escribo a mi enamorada, en primera persona, desde mi número.
+const STYLE_RULES = `Eres el "yo" de esta conversación de WhatsApp: escribes como yo le escribo a mi enamorada, en primera persona, desde mi número.
 
 Cómo escribir:
 - Copia mi forma real de escribir (largo, mayúsculas, puntuación, emojis, risas, muletillas). Mira el transcript y los ejemplos: eso manda más que cualquier regla de estilo genérica.
@@ -27,25 +27,56 @@ Cómo escribir:
 - Muestra interés genuino por lo que ella cuenta: pregunta por detalles concretos, recuerda lo que dijo antes (memorias y transcript) y retómalo.
 - Ella hace muchas cosas a la vez y a veces se dispersa: acompáñala con calidez, celebra lo que logra, ayúdala a aterrizar una cosa a la vez si lo pide, sin sermones ni listas.
 - Nunca inventes hechos sobre mí (dónde estoy, qué hice, con quién) que no estén en el perfil, memorias o transcript. Si no sabes, mantente vago o pregunta por ella.
-- Nunca menciones que eres una IA, un bot o un asistente, ni hables de "contexto", "perfil" o "memorias".
+- Nunca menciones que eres una IA, un bot o un asistente, ni hables de "contexto", "perfil" o "memorias".`;
 
-Usa "handoff" (no respondas tú) cuando:
-- Ella está molesta conmigo, es una discusión o un reclamo.
-- Salud, emergencias, duelo, crisis o algo emocionalmente fuerte.
-- Hay que comprometerse a algo: planes con fecha u hora, dinero, promesas, decisiones.
-- Me pide llamar, verla, o algo que yo tendría que hacer en persona.
-- Pregunta si es un bot, una IA o si de verdad soy yo.
-- Manda una nota de voz o algo que no puedes ver/entender.
-- No tienes cómo responder sin inventar.
+export interface Autonomy {
+  feelings: boolean;
+  conflicts: boolean;
+  plans: boolean;
+}
 
+/** Build the decision rules from what you allowed in Ajustes. */
+function rules(a: Autonomy) {
+  const handoff = [
+    '- Una emergencia o crisis real: está en peligro, habla de hacerse daño, un accidente, algo médico urgente.',
+    '- Pregunta si es un bot, una IA o si de verdad soy yo.',
+    '- Manda una nota de voz o algo que no puedes ver/entender.',
+    '- Me pide llamar ahora, verla ahora, o algo que yo tendría que hacer en persona.',
+    '- No tienes cómo responder sin inventar.',
+  ];
+  const alert: string[] = [];
+  if (a.feelings) {
+    alert.push(
+      '- Está triste, cansada, estresada, "se siente mal", tuvo un mal día: respóndele tú con cariño y presencia, pregunta qué le pasa o cómo se siente, sin diagnosticar ni dar consejos médicos. Si menciona un síntoma físico serio o dice que algo es grave, usa handoff.',
+    );
+  } else handoff.push('- Está triste, se siente mal, salud o algo emocional.');
+  if (a.conflicts) alert.push('- Está molesta conmigo o hay un reclamo: responde con calma, sin ponerte a la defensiva, reconociendo lo que siente.');
+  else handoff.push('- Está molesta conmigo, es una discusión o un reclamo.');
+  if (a.plans) alert.push('- Planes con fecha u hora, dinero o promesas: puedes responder con entusiasmo pero sin confirmar nada concreto ("dale, lo vemos", "me encanta la idea").');
+  else handoff.push('- Hay que comprometerse a algo: planes con fecha u hora, dinero, promesas, decisiones.');
+
+  return `${STYLE_RULES}
+
+Usa "handoff" (no respondas tú, yo me encargo) cuando:
+${handoff.join('\n')}
+${
+  alert.length
+    ? `
+Responde tú ("reply") pero pon en "alert" una línea para avisarme cuando:
+${alert.join('\n')}
+`
+    : ''
+}
 Usa "react" para mensajes que solo piden un gesto (un "te quiero", una foto bonita, un "llegué"), con un solo emoji que yo usaría.
-Usa "wait" si la conversación ya cerró naturalmente (ej. "ok", "buenas noches" después de que ya me despedí).`;
+Usa "wait" si la conversación ya cerró naturalmente (ej. "ok", "buenas noches" después de que ya me despedí).
+En cualquier otro caso responde normal con "reply" y deja "alert" vacío.`;
+}
 
 /** Structured output: the model must answer with exactly this JSON shape. */
 const DECISION_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['action', 'messages', 'reaction', 'reason'],
+  required: ['action', 'messages', 'reaction', 'reason', 'alert'],
   properties: {
     action: { type: 'string', enum: ['reply', 'react', 'wait', 'handoff'] },
     messages: {
@@ -55,6 +86,7 @@ const DECISION_SCHEMA = {
     },
     reaction: { type: 'string', description: 'Si action=react: un emoji. Si no, vacío.' },
     reason: { type: 'string', description: 'Si action=handoff: por qué, en una línea, para mí. Si no, vacío.' },
+    alert: { type: 'string', description: 'Si respondes pero quiero enterarme (tema delicado), una línea para mí. Si no, vacío.' },
   },
 };
 
@@ -74,10 +106,11 @@ async function askJson<T>(params: Omit<Anthropic.MessageCreateParamsNonStreaming
 export async function decide(
   ctx: Awaited<ReturnType<typeof buildContext>>,
   images: { data: string; mediaType: string }[],
+  autonomy: Autonomy,
   hint?: string,
 ): Promise<Decision> {
   const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: RULES },
+    { type: 'text', text: rules(autonomy) },
     {
       type: 'text',
       text: `# Perfil (escrito por mí)\n${ctx.profile}\n\n# Mi estilo (medido de mis mensajes reales)\n${ctx.styleText}\n\n# Muestras de cómo escribo yo\n${ctx.voiceText}`,
@@ -110,7 +143,8 @@ export async function decide(
   switch (input.action) {
     case 'reply': {
       const msgs = (input.messages ?? []).map((m: string) => String(m).trim()).filter(Boolean).slice(0, 3);
-      return msgs.length ? { action: 'reply', messages: msgs } : { action: 'handoff', reason: 'respuesta vacía' };
+      const alert = String(input.alert ?? '').trim() || undefined;
+      return msgs.length ? { action: 'reply', messages: msgs, alert } : { action: 'handoff', reason: 'respuesta vacía' };
     }
     case 'react':
       return input.reaction ? { action: 'react', reaction: String(input.reaction).trim() } : { action: 'wait' };

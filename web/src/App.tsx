@@ -8,6 +8,7 @@ type Settings = {
   replyDelaySec: [number, number];
   quietHours: [number, number] | null;
   takeoverMinutes: number;
+  autonomy: { feelings: boolean; conflicts: boolean; plans: boolean };
 };
 type Status = {
   settings: Settings;
@@ -384,6 +385,20 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
       <label>Pausa automática cuando escribes tú (min)
         <input type="number" value={s.takeoverMinutes} onChange={(e) => setS({ ...s, takeoverMinutes: num(e.target.value) })} />
       </label>
+      <fieldset className="autonomy">
+        <legend>Temas delicados que responde solo (y te avisa)</legend>
+        {([
+          ['feelings', 'Cuando está triste, cansada o "se siente mal"'],
+          ['conflicts', 'Cuando está molesta contigo o hay un reclamo'],
+          ['plans', 'Planes con fecha, dinero o promesas (sin confirmar nada)'],
+        ] as const).map(([k, label]) => (
+          <label key={k} className="check">
+            <input type="checkbox" checked={s.autonomy[k]} onChange={(e) => setS({ ...s, autonomy: { ...s.autonomy, [k]: e.target.checked } })} />
+            {label}
+          </label>
+        ))}
+        <p className="muted small">Siempre te pasa la conversación si es una emergencia real, si pregunta si es un bot o si manda una nota de voz.</p>
+      </fieldset>
       <button className="primary" onClick={async () => { await api('/api/settings', { method: 'PUT', body: s }); setMsg('Guardado'); onSaved(); }}>Guardar</button>
       {msg && <span className="muted small"> {msg}</span>}
 
