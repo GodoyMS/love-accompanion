@@ -35,6 +35,12 @@ export async function insertMessage(m: NewMessage, sentBy: 'human' | 'bot', sour
      on conflict (wa_id) do nothing`,
     [m.waId, m.fromMe, sentBy, m.kind, m.body, m.ts, m.key ? JSON.stringify(m.key) : null, source],
   );
+  // The real WhatsApp message wins over the same one from an imported .txt.
+  await q(
+    `delete from messages where source = 'import' and wa_id is null and from_me = $1 and body = $2
+       and ts between $3::timestamptz - interval '90 seconds' and $3::timestamptz + interval '90 seconds'`,
+    [m.fromMe, m.body, m.ts],
+  );
   return (r.rowCount ?? 0) > 0;
 }
 

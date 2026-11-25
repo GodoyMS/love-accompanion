@@ -26,11 +26,11 @@ const INVISIBLE = /[‎‏‪-‮⁦-⁩﻿]/g;
 
 const MEDIA_PATTERNS: [RegExp, string][] = [
   [/<(multimedia omitido|media omitted)>/i, '[multimedia]'],
-  [/^(imagen omitida|image omitted)$/i, '[foto]'],
-  [/^(audio omitido|audio omitted)$/i, '[nota de voz]'],
-  [/^(sticker omitido|sticker omitted)$/i, '[sticker]'],
-  [/^(video omitido|video omitted)$/i, '[video]'],
-  [/^(GIF omitido|GIF omitted)$/i, '[gif]'],
+  [/^<?(imagen omitida|image omitted)>?$/i, '[foto]'],
+  [/^<?(audio omitido|audio omitted)>?$/i, '[nota de voz]'],
+  [/^<?(sticker omitido|sticker omitted)>?$/i, '[sticker]'],
+  [/^<?(video omitido|video omitted)>?$/i, '[video]'],
+  [/^<?(GIF omitido|GIF omitted)>?$/i, '[gif]'],
   [/\.(opus|ogg) \((archivo adjunto|file attached)\)$/i, '[nota de voz]'],
   [/\.(jpg|jpeg|png|webp) \((archivo adjunto|file attached)\)$/i, '[foto]'],
 ];

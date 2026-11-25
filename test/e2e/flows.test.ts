@@ -531,3 +531,44 @@ describe('settings validation', () => {
     assert.deepEqual((await settings.reloadSettings()).quietHours, [1, 6]);
   });
 });
+
+describe('importing the chat (#5)', () => {
+  const EXPORT = '01/11/25, 10:00 p. m. - Vale: hola\n01/11/25, 10:01 p. m. - Godoy: hola amor\n01/11/25, 10:02 p. m. - Vale: <sticker omitido>';
+  const imported = async () => (await db.q(`select from_me, body from messages where source = 'import' order by ts`)).rows;
+
+  test('re-importing (even choosing the wrong "you" first) never duplicates', async () => {
+    await reset();
+    const { importExport } = await import('../../src/importer/import.ts');
+    await importExport(EXPORT, 'Vale'); // wrong choice
+    const r = await importExport(EXPORT, 'Godoy'); // fixed
+    assert.equal((r as any).replaced, 3);
+    assert.deepEqual(await imported(), [
+      { from_me: false, body: 'hola' },
+      { from_me: true, body: 'hola amor' },
+      { from_me: false, body: '[sticker]' },
+    ]);
+  });
+
+  test('the real WhatsApp message replaces its imported copy', async () => {
+    await reset();
+    const { importExport } = await import('../../src/importer/import.ts');
+    await importExport(EXPORT, 'Godoy');
+    const ts = (await db.q(`select ts from messages where body = 'hola amor'`)).rows[0].ts;
+    await store.insertMessage({ waId: 'REAL1', fromMe: true, kind: 'text', body: 'hola amor', ts: new Date(ts) }, 'human', 'history');
+    const rows = (await db.q(`select source from messages where body = 'hola amor'`)).rows;
+    assert.deepEqual(rows, [{ source: 'history' }]);
+  });
+
+  test('boot self-heals duplicates left by older versions', async () => {
+    await reset();
+    for (let i = 0; i < 2; i++) {
+      await db.q(`insert into messages (from_me, sent_by, kind, body, ts, received_at, source)
+                  values (false, 'import', 'text', 'hola', '2025-11-01T03:00:00Z', '2025-11-01T03:00:00Z', 'import')
+                  on conflict do nothing`);
+    }
+    await db.q(`insert into messages (from_me, sent_by, kind, body, ts, received_at, source)
+                values (false, 'import', 'text', 'hola', '2025-11-01T03:00:30Z', '2025-11-01T03:00:30Z', 'import')`);
+    await db.migrate();
+    assert.equal((await db.q(`select count(*)::int n from messages where body = 'hola'`)).rows[0].n, 1);
+  });
+});
