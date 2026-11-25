@@ -20,6 +20,8 @@ export interface Settings {
   autonomy: {
     /** Sadness, tiredness, "me siento mal", stress, a bad day. */
     feelings: boolean;
+    /** Physical symptoms (stomach ache, fever, "creo que tengo dengue"), non-emergency. */
+    health: boolean;
     /** She's upset with you, a complaint or an argument. */
     conflicts: boolean;
     /** Committing to plans with a date/time, money or promises. */
@@ -34,7 +36,7 @@ export const DEFAULT_SETTINGS: Settings = {
   replyDelaySec: [5, 45],
   quietHours: [1, 7],
   handBackMinutes: 2,
-  autonomy: { feelings: true, conflicts: false, plans: false },
+  autonomy: { feelings: true, health: true, conflicts: false, plans: false },
 };
 
 let cache: Settings | null = null;

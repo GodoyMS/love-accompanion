@@ -144,6 +144,13 @@ async function think() {
 
 async function handoff(reason: string, preview: string) {
   await logEvent('handoff', `${reason} — ${preview.slice(0, 200)}`);
+  // She keeps writing while you haven't answered yet: one alert is enough for 10 min.
+  const last = await kvGet<number>('last_handoff_at', 0);
+  if (Date.now() - last < 10 * 60_000) {
+    console.log('[think] handoff again, alert already sent recently');
+    return;
+  }
+  await kvSet('last_handoff_at', Date.now());
   await wa.notifySelf(`No le respondí, te toca a ti: ${reason}\n\nElla: "${preview.slice(0, 300)}"`);
 }
 

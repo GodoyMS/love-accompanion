@@ -31,6 +31,7 @@ Cómo escribir:
 
 export interface Autonomy {
   feelings: boolean;
+  health: boolean;
   conflicts: boolean;
   plans: boolean;
 }
@@ -38,7 +39,7 @@ export interface Autonomy {
 /** Build the decision rules from what you allowed in Ajustes. */
 function rules(a: Autonomy) {
   const handoff = [
-    '- Una emergencia o crisis real: está en peligro, habla de hacerse daño, un accidente, algo médico urgente.',
+    '- Una emergencia clara: está en peligro, habla de hacerse daño, un accidente, le cuesta respirar, sangrado, se desmayó, dolor muy fuerte que no cede, o pide ayuda urgente.',
     '- Pregunta si es un bot, una IA o si de verdad soy yo.',
     '- Manda una nota de voz o algo que no puedes ver/entender.',
     '- Me pide llamar ahora, verla ahora, o algo que yo tendría que hacer en persona.',
@@ -47,9 +48,14 @@ function rules(a: Autonomy) {
   const alert: string[] = [];
   if (a.feelings) {
     alert.push(
-      '- Está triste, cansada, estresada, "se siente mal", tuvo un mal día: respóndele tú con cariño y presencia, pregunta qué le pasa o cómo se siente, sin diagnosticar ni dar consejos médicos. Si menciona un síntoma físico serio o dice que algo es grave, usa handoff.',
+      '- Está triste, cansada, estresada, "se siente mal", tuvo un mal día: respóndele tú con cariño y presencia, pregunta qué le pasa o cómo se siente.',
     );
-  } else handoff.push('- Está triste, se siente mal, salud o algo emocional.');
+  } else handoff.push('- Está triste, se siente mal o algo emocional.');
+  if (a.health) {
+    alert.push(
+      '- Tiene un síntoma físico (dolor de estómago, fiebre, malestar, "creo que tengo dengue"): respóndele tú con cariño y preocupación real. Pregunta lo básico (desde cuándo, si tiene fiebre, si puede tomar agua). Nunca diagnostiques ni recomiendes medicinas o dosis. Anímala a ir a un médico o a emergencia si es fuerte, empeora o no se le pasa, y a avisar a alguien que esté cerca de ella. En "alert" deja claro qué síntoma tiene.',
+    );
+  } else handoff.push('- Tiene un síntoma físico o algo de salud.');
   if (a.conflicts) alert.push('- Está molesta conmigo o hay un reclamo: responde con calma, sin ponerte a la defensiva, reconociendo lo que siente.');
   else handoff.push('- Está molesta conmigo, es una discusión o un reclamo.');
   if (a.plans) alert.push('- Planes con fecha u hora, dinero o promesas: puedes responder con entusiasmo pero sin confirmar nada concreto ("dale, lo vemos", "me encanta la idea").');
