@@ -96,6 +96,16 @@ export async function listPending() {
   return r.rows;
 }
 
+/**
+ * Is there already a reply on its way (queued or being sent) that was decided after `t`?
+ * New messages from her cancel queued replies, so one created after her latest message
+ * already answers everything she said.
+ */
+export async function answerInFlightSince(t: Date): Promise<boolean> {
+  const r = await q(`select 1 from pending_replies where status in ('pending', 'sending') and created_at >= $1 limit 1`, [t]);
+  return (r.rowCount ?? 0) > 0;
+}
+
 export async function countPending() {
   const r = await q<{ n: number }>(`select count(*)::int n from pending_replies where status in ('pending', 'sending')`);
   return r.rows[0].n;

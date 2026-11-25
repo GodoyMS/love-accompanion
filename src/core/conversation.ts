@@ -92,7 +92,7 @@ export class Conversation {
   async kick(why: string, withinHours = 12) {
     const pending = await messages.unanswered();
     const recent = pending.filter((t) => ports.clock.now() - new Date(t.received_at).getTime() < withinHours * 3600_000);
-    if (!recent.length || (await replies.countPending()) > 0) return;
+    if (!recent.length || (await this.alreadyAnswering(recent))) return;
     console.log(`[kick] ${recent.length} unanswered (${why})`);
     await this.schedule();
   }
@@ -144,6 +144,11 @@ export class Conversation {
       }
       const ctx = await buildContext();
       if (!ctx.pending.length) return;
+      // Another pass (a restart check, a re-run) may already have answered these exact messages.
+      if (await this.alreadyAnswering(ctx.pending)) {
+        console.log('[think] skipped: a reply to these messages is already on its way');
+        return;
+      }
 
       const s = await getSettings();
       const version = this.version;
@@ -285,6 +290,11 @@ export class Conversation {
   }
 
   // ---------- helpers ----------
+
+  private async alreadyAnswering(pending: messages.Turn[]) {
+    const latest = pending.reduce((m, t) => Math.max(m, new Date(t.received_at).getTime()), 0);
+    return replies.answerInFlightSince(new Date(latest));
+  }
 
   private async transcribe(m: Incoming, raw: WAMessage) {
     if (!ports.speech.canTranscribe()) return;
