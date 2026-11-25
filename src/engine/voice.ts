@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import type { VoiceTuning } from '../settings.js';
 
 /**
  * Voice-note replies: ElevenLabs text-to-speech in your voice, converted with ffmpeg to the
@@ -16,19 +17,31 @@ export function speakable(text: string) {
     .replace(/\b(q|k)\b/gi, 'que')
     .replace(/\bxq\b|\bpq\b/gi, 'porque')
     .replace(/\btb\b/gi, 'también')
+    .replace(/\s*\/\s*/g, '. ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-export async function tts(text: string): Promise<Buffer> {
+const clamp = (x: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number(x) || 0));
+
+export async function tts(text: string, tuning?: VoiceTuning): Promise<Buffer> {
+  const v = tuning ?? (await (await import('../settings.js')).getSettings()).voice;
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId()}?output_format=mp3_44100_128`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'xi-api-key': process.env.ELEVENLABS_API_KEY!, 'content-type': 'application/json', accept: 'audio/mpeg' },
     body: JSON.stringify({
       text,
-      model_id: process.env.TTS_MODEL ?? 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.45, similarity_boost: 0.8, style: 0.15, use_speaker_boost: true },
+      model_id: process.env.TTS_MODEL ?? v.model,
+      // Flash v2.5 can pin the language (keeps it Spanish, normalizes numbers the Spanish way).
+      ...(v.model === 'eleven_flash_v2_5' ? { language_code: 'es' } : {}),
+      voice_settings: {
+        stability: clamp(v.stability, 0, 1),
+        similarity_boost: clamp(v.similarity, 0, 1),
+        style: clamp(v.style, 0, 1),
+        speed: clamp(v.speed, 0.7, 1.2),
+        use_speaker_boost: true,
+      },
     }),
     signal: AbortSignal.timeout(60_000),
   });

@@ -10,6 +10,7 @@ type Settings = {
   handBackMinutes: number;
   voiceReplies: boolean;
   autonomy: { feelings: boolean; health: boolean; conflicts: boolean; plans: boolean };
+  voice: { model: string; speed: number; stability: number; similarity: number; style: number };
 };
 type Status = {
   settings: Settings;
@@ -395,6 +396,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
         <input type="checkbox" checked={s.voiceReplies} onChange={(e) => setS({ ...s, voiceReplies: e.target.checked })} />
         Si ella manda nota de voz, responder con nota de voz (tu voz de ElevenLabs)
       </label>
+      {s.voiceReplies && <VoiceTuner voice={s.voice} onChange={(voice) => setS({ ...s, voice })} />}
       <label className="check">
         <input type="checkbox" checked={!!s.quietHours} onChange={(e) => setS({ ...s, quietHours: e.target.checked ? [1, 7] : null })} />
         Horas de sueño: de noche deja las respuestas para la mañana
@@ -424,7 +426,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
             {label}
           </label>
         ))}
-        <p className="muted small">Siempre te pasa la conversación si es una emergencia clara (peligro, le cuesta respirar, sangrado, desmayo, hacerse daño), si pregunta si es un bot o si manda una nota de voz.</p>
+        <p className="muted small">Siempre te pasa la conversación si es una emergencia clara (peligro, le cuesta respirar, sangrado, desmayo, hacerse daño) o si duda de que seas tú.</p>
       </fieldset>
       <button className="primary" onClick={async () => { await api('/api/settings', { method: 'PUT', body: s }); setMsg('Guardado'); onSaved(); }}>Guardar</button>
       {msg && <span className="muted small"> {msg}</span>}
@@ -454,5 +456,59 @@ function Events({ events }: { events: Status['events'] }) {
         ))}
       </ul>
     </section>
+  );
+}
+
+function VoiceTuner({ voice, onChange }: { voice: Settings['voice']; onChange: (v: Settings['voice']) => void }) {
+  const [text, setText] = useState('Hola amor, ¿cómo estás? Aquí estoy, tranquilo, pensando en ti. Cuéntame cómo te fue hoy.');
+  const [src, setSrc] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const slider = (k: 'speed' | 'stability' | 'similarity' | 'style', label: string, min: number, max: number, hint: string) => (
+    <label>
+      {label}: <b>{voice[k].toFixed(2)}</b> <span className="muted small">{hint}</span>
+      <input type="range" min={min} max={max} step={0.05} value={voice[k]} onChange={(e) => onChange({ ...voice, [k]: Number(e.target.value) })} />
+    </label>
+  );
+  return (
+    <fieldset className="autonomy">
+      <legend>Tu voz (ElevenLabs)</legend>
+      <label>Modelo
+        <select value={voice.model} onChange={(e) => onChange({ ...voice, model: e.target.value })}>
+          <option value="eleven_multilingual_v2">Multilingual v2: el más estable y natural</option>
+          <option value="eleven_flash_v2_5">Flash v2.5: fuerza español, más rápido</option>
+          <option value="eleven_v3">v3: más expresivo</option>
+        </select>
+      </label>
+      {slider('speed', 'Velocidad', 0.7, 1.2, '(menos = más pausado)')}
+      {slider('stability', 'Estabilidad', 0, 1, '(más = más calmado y parejo)')}
+      {slider('similarity', 'Parecido a tu voz', 0, 1, '(más = conserva tu acento)')}
+      {slider('style', 'Estilo', 0, 1, '(0 = neutral, más = más actuado)')}
+      <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} />
+      <div className="row gap">
+        <button
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setErr('');
+            try {
+              const res = await fetch('/api/voice/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, voice }) });
+              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? res.statusText);
+              if (src) URL.revokeObjectURL(src);
+              setSrc(URL.createObjectURL(await res.blob()));
+            } catch (e) {
+              setErr((e as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? 'Generando…' : '▶ Probar voz'}
+        </button>
+        <span className="muted small">Solo lo escuchas tú. Guarda abajo cuando te guste.</span>
+      </div>
+      {src && <audio controls autoPlay src={src} />}
+      {err && <p className="error">{err}</p>}
+    </fieldset>
   );
 }

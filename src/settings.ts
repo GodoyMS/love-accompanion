@@ -29,6 +29,20 @@ export interface Settings {
     /** Committing to plans with a date/time, money or promises. */
     plans: boolean;
   };
+  /** How your ElevenLabs voice sounds. */
+  voice: VoiceTuning;
+}
+
+export interface VoiceTuning {
+  model: 'eleven_multilingual_v2' | 'eleven_flash_v2_5' | 'eleven_v3';
+  /** 0.7 (slow) – 1.2 (fast). */
+  speed: number;
+  /** 0–1: higher = calmer, more even; lower = more expressive. */
+  stability: number;
+  /** 0–1: how closely to stick to your real voice (and its accent). */
+  similarity: number;
+  /** 0–1: exaggeration of the speaking style. 0 = neutral. */
+  style: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -40,6 +54,8 @@ export const DEFAULT_SETTINGS: Settings = {
   handBackMinutes: 2,
   voiceReplies: true,
   autonomy: { feelings: true, health: true, conflicts: false, plans: false },
+  // Calm, unhurried, neutral: slower than default, steady, close to your real voice, no dramatization.
+  voice: { model: 'eleven_multilingual_v2', speed: 0.9, stability: 0.65, similarity: 0.9, style: 0 },
 };
 
 let cache: Settings | null = null;
@@ -65,7 +81,12 @@ export async function getSettings(): Promise<Settings> {
       saved._v = 4;
       await kvSet('settings', saved);
     }
-    cache = { ...DEFAULT_SETTINGS, ...saved, autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) } };
+    cache = {
+      ...DEFAULT_SETTINGS,
+      ...saved,
+      autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) },
+      voice: { ...DEFAULT_SETTINGS.voice, ...(saved.voice ?? {}) },
+    };
   }
   return cache;
 }

@@ -149,7 +149,7 @@ export async function decide(
     ]),
     {
       type: 'text',
-      text: `Ahora es ${localStamp(new Date())}.\n\n# Conversación reciente\n${ctx.transcript}\n\n# Mensajes nuevos de ella que debo responder\n${newMsgs}${hint ? `\n\nNota: ${hint}` : ''}${voice ? '\n\nElla te habló por nota de voz, así que vas a responder con UNA nota de voz con mi voz: en "messages" pon un solo texto con exactamente lo que yo diría hablando, natural y con mi forma de hablar, de 1 a 4 frases. Sin emojis, sin abreviaturas de chat, sin "jaja" escrito salvo que lo diría en voz alta. Si es mejor solo reaccionar o no responder, puedes usar "react" o "wait" igual.' : ''}\n\nDecide qué hacer y responde con el JSON pedido.`,
+      text: `Ahora es ${localStamp(new Date())}.\n\n# Conversación reciente\n${ctx.transcript}\n\n# Mensajes nuevos de ella que debo responder\n${newMsgs}${hint ? `\n\nNota: ${hint}` : ''}${voice ? '\n\nElla te habló por nota de voz, así que vas a responder con UNA nota de voz con mi voz: en "messages" pon un solo texto con exactamente lo que yo diría hablando, natural y con mi forma de hablar, de 1 a 4 frases, en español neutro y con calma: frases completas, sin muletillas ni modismos regionales que yo no uso en el chat. Sin emojis, sin abreviaturas de chat, sin "jaja" escrito salvo que lo diría en voz alta. Si es mejor solo reaccionar o no responder, puedes usar "react" o "wait" igual.' : ''}\n\nDecide qué hacer y responde con el JSON pedido.`,
     },
   ];
 

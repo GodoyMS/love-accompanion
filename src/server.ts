@@ -11,7 +11,7 @@ import { kvGet, kvSet, q } from './db.js';
 import { DEFAULT_PROFILE, describeStyle } from './engine/context.js';
 import { runMemoryExtraction } from './engine/memory.js';
 import { sttProvider } from './engine/transcribe.js';
-import { voiceReady } from './engine/voice.js';
+import { speakable, tts, voiceReady } from './engine/voice.js';
 import { importExport, readExportFile } from './importer/import.js';
 import { computeStyle, type StyleProfile } from './importer/style.js';
 import { cancelPending, getSettings, pauseFor, setEnabled, updateSettings, type Settings } from './settings.js';
@@ -171,6 +171,18 @@ export async function buildServer() {
         return await importExport(text, me);
       } catch (e) {
         return reply.code(400).send({ error: (e as Error).message });
+      }
+    });
+
+    // Listen to your voice with the current (or unsaved) tuning, without sending anything to her.
+    api.post<{ Body: { text?: string; voice?: Settings['voice'] } }>('/api/voice/preview', async (req, reply) => {
+      if (!voiceReady()) return reply.code(400).send({ error: 'Falta ELEVENLABS_API_KEY o ELEVENLABS_VOICE_ID' });
+      const text = speakable(String(req.body?.text || 'Hola amor, ¿cómo estás? Aquí estoy, tranquilo, pensando en ti.')).slice(0, 400);
+      try {
+        const mp3 = await tts(text, req.body?.voice ?? (await getSettings()).voice);
+        return reply.type('audio/mpeg').send(mp3);
+      } catch (e) {
+        return reply.code(502).send({ error: (e as Error).message });
       }
     });
 
