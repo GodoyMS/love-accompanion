@@ -37,6 +37,20 @@ type Handler = {
 
 const log = pino({ level: config.logLevel === 'debug' ? 'debug' : 'warn' });
 
+/** WA_BROWSER lets us switch the identity we present to WhatsApp without a code change. */
+function pickBrowser(): [string, string, string] {
+  switch ((process.env.WA_BROWSER ?? 'mac-chrome').toLowerCase()) {
+    case 'mac-desktop':
+      return Browsers.macOS('Desktop');
+    case 'ubuntu-chrome':
+      return Browsers.ubuntu('Chrome');
+    case 'windows-chrome':
+      return Browsers.windows('Chrome');
+    default:
+      return Browsers.macOS('Chrome'); // Baileys' own default, the most tested combination
+  }
+}
+
 class WhatsApp {
   sock: WASocket | null = null;
   qrDataUrl: string | null = null;
@@ -69,14 +83,14 @@ class WhatsApp {
       return { version: undefined as any };
     });
     const version = latest.version;
-    console.log(`[wa] connecting (registered=${!!state.creds.registered}, version=${version?.join('.') ?? 'bundled'})`);
+    console.log(`[wa] connecting (registered=${!!state.creds.registered}, version=${version?.join('.') ?? 'bundled'}, browser=${pickBrowser().join('/')})`);
     this.lastStatus = 'conectando…';
 
     const sock = makeWASocket({
       version,
       auth: state,
       logger: log as any,
-      browser: Browsers.macOS('Desktop'),
+      browser: pickBrowser(),
       markOnlineOnConnect: false, // keep your phone getting notifications and don't look "always online"
       syncFullHistory: true,
       getMessage: async (key) => (key.id ? this.sentCache.get(key.id) : undefined),
