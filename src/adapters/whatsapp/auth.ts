@@ -6,7 +6,7 @@ import {
   type AuthenticationState,
   type SignalDataTypeMap,
 } from '@whiskeysockets/baileys';
-import { q } from '../db.js';
+import { q } from '../../store/db.js';
 
 /** Baileys auth state stored in Postgres, so the service needs no volume. */
 export async function usePgAuthState(): Promise<{

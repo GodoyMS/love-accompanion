@@ -1,24 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { config, missingConfig } from '../config.js';
-import { localStamp } from '../time.js';
-import type { buildContext } from './context.js';
+import { config } from '../config.js';
+import { NoAnswer, type Brain, type DecideInput, type Decision } from '../core/ports.js';
+import { localStamp } from '../core/time.js';
+import type { Autonomy } from '../store/settings.js';
 
 let client: Anthropic | null = null;
 const anthropic = {
   get messages() {
     if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY no está configurada');
-    client ??= new Anthropic({ apiKey: config.anthropicKey });
+    client ??= new Anthropic({ apiKey: config.anthropicKey, maxRetries: 2, timeout: 60_000 });
     return client.messages;
   },
 };
-export const llmReady = () => !missingConfig.includes('ANTHROPIC_API_KEY');
-
-export type Decision =
-  | { action: 'reply'; messages: string[]; alert?: string }
-  | { action: 'react'; reaction: string }
-  | { action: 'wait' }
-  | { action: 'handoff'; reason: string }
-  | { action: 'disclose'; direct: boolean; reason: string };
 
 const STYLE_RULES = `Eres el "yo" de esta conversación de WhatsApp: escribes como yo le escribo a mi enamorada, en primera persona, desde mi número.
 
@@ -28,14 +21,8 @@ Cómo escribir:
 - Muestra interés genuino por lo que ella cuenta: pregunta por detalles concretos, recuerda lo que dijo antes (memorias y transcript) y retómalo.
 - Ella hace muchas cosas a la vez y a veces se dispersa: acompáñala con calidez, celebra lo que logra, ayúdala a aterrizar una cosa a la vez si lo pide, sin sermones ni listas.
 - Nunca inventes hechos concretos sobre mí (dónde estoy, qué hice, con quién) que no estén en el perfil, memorias o transcript. Si te pregunta qué haces o dónde estás, responde vago y cálido, coherente con la hora y mi rutina del perfil (ej. "aquí amor, pensando en ti", "acá en la casa, ¿y tú?") y regresa la conversación a ella. Eso NO es motivo de handoff.
-- Nunca menciones que eres una IA, un bot o un asistente, ni hables de "contexto", "perfil" o "memorias".`;
+- No hables de "contexto", "perfil", "memorias" ni de cómo funcionas.`;
 
-export interface Autonomy {
-  feelings: boolean;
-  health: boolean;
-  conflicts: boolean;
-  plans: boolean;
-}
 
 /** Build the decision rules from what you allowed in Ajustes. */
 function rules(a: Autonomy) {
@@ -95,6 +82,11 @@ Usa "wait" si la conversación ya cerró naturalmente (ej. "ok", "buenas noches"
 En cualquier otro caso responde normal con "reply" y deja "alert" vacío.`;
 }
 
+/** After she was told a stand-in sometimes answers: stay honest, keep caring for her. */
+const DISCLOSED_RULES = `
+
+IMPORTANTE: en este chat ya le dijimos que a veces le responde un reemplazo mío. No vuelvas a fingir que eres yo ni a negarlo: si lo menciona o pregunta, sé honesto y cálido. Puedes seguir acompañándola con mi estilo cariñoso, sin afirmar hechos de mi vida.`;
+
 /** Structured output: the model must answer with exactly this JSON shape. */
 const DECISION_SCHEMA = {
   type: 'object',
@@ -114,10 +106,7 @@ const DECISION_SCHEMA = {
   },
 };
 
-/** Call Claude and parse its JSON answer. */
-/** The model stopped without giving a usable answer (declined, or ran out of room twice). */
-export class NoAnswer extends Error {}
-
+/** Call Claude and parse its structured (JSON schema) answer. */
 async function askJson<T>(params: Omit<Anthropic.MessageCreateParamsNonStreaming, 'output_config'>, schema: object): Promise<T> {
   let maxTokens = params.max_tokens;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -149,15 +138,9 @@ async function askJson<T>(params: Omit<Anthropic.MessageCreateParamsNonStreaming
   throw new NoAnswer('no obtuve una respuesta válida del modelo');
 }
 
-export async function decide(
-  ctx: Awaited<ReturnType<typeof buildContext>>,
-  images: { data: string; mediaType: string; label: string }[],
-  autonomy: Autonomy,
-  hint?: string,
-  voice = false,
-): Promise<Decision> {
+async function decide({ ctx, images, autonomy, voice, disclosed }: DecideInput): Promise<Decision> {
   const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: rules(autonomy) },
+    { type: 'text', text: rules(autonomy) + (disclosed ? DISCLOSED_RULES : '') },
     {
       type: 'text',
       text: `# Perfil (escrito por mí)\n${ctx.profile}\n\n# Mi estilo (medido de mis mensajes reales)\n${ctx.styleText}\n\n# Muestras de cómo escribo yo\n${ctx.voiceText}`,
@@ -177,7 +160,7 @@ export async function decide(
     ]),
     {
       type: 'text',
-      text: `Ahora es ${localStamp(new Date())}.\n\n# Conversación reciente\n${ctx.transcript}\n\n# Mensajes nuevos de ella que debo responder\n${newMsgs}${hint ? `\n\nNota: ${hint}` : ''}${voice ? '\n\nElla te habló por nota de voz, así que vas a responder con UNA nota de voz con mi voz: en "messages" pon un solo texto con exactamente lo que yo diría hablando, natural y con mi forma de hablar, de 1 a 4 frases, en español neutro y con calma: frases completas, sin muletillas ni modismos regionales que yo no uso en el chat. Sin emojis, sin abreviaturas de chat, sin "jaja" escrito salvo que lo diría en voz alta. Si es mejor solo reaccionar o no responder, puedes usar "react" o "wait" igual.' : ''}\n\nDecide qué hacer y responde con el JSON pedido.`,
+      text: `Ahora es ${localStamp(new Date())}.\n\n# Conversación reciente\n${ctx.transcript}\n\n# Mensajes nuevos de ella que debo responder\n${newMsgs}${voice ? '\n\nElla te habló por nota de voz, así que vas a responder con UNA nota de voz con mi voz: en "messages" pon un solo texto con exactamente lo que yo diría hablando, natural y con mi forma de hablar, de 1 a 4 frases, en español neutro y con calma: frases completas, sin muletillas ni modismos regionales que yo no uso en el chat. Sin emojis, sin abreviaturas de chat, sin "jaja" escrito salvo que lo diría en voz alta. Si es mejor solo reaccionar o no responder, puedes usar "react" o "wait" igual.' : ''}\n\nDecide qué hacer y responde con el JSON pedido.`,
     },
   ];
 
@@ -203,7 +186,7 @@ export async function decide(
 }
 
 /** Pull durable facts out of recent chat for long-term memory. */
-export async function extractMemories(transcript: string, existing: string): Promise<{ fact: string; expires_in_days?: number }[]> {
+async function remember(transcript: string, existing: string): Promise<{ fact: string; expires_in_days?: number }[]> {
   const out = await askJson<{ facts: { fact: string; expires_in_days: number }[] }>(
     {
       model: config.fastModel,
@@ -236,3 +219,9 @@ export async function extractMemories(transcript: string, existing: string): Pro
     .filter((f) => f?.fact)
     .map((f) => ({ fact: f.fact, expires_in_days: f.expires_in_days > 0 ? f.expires_in_days : undefined }));
 }
+
+export const claudeBrain: Brain & { remember: typeof remember } = {
+  ready: () => !!config.anthropicKey,
+  decide,
+  remember,
+};

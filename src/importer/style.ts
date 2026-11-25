@@ -1,4 +1,4 @@
-import { kvSet, q } from '../db.js';
+import { kvSet, q } from '../store/db.js';
 
 export interface StyleProfile {
   sampleSize: number;

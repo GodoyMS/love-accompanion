@@ -4,7 +4,6 @@ import makeWASocket, {
   downloadMediaMessage,
   fetchLatestBaileysVersion,
   generateMessageIDV2,
-  getContentType,
   jidNormalizedUser,
   normalizeMessageContent,
   type WAMessage,
@@ -14,33 +13,26 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import QRCode from 'qrcode';
-import { config, partnerPnJid } from '../config.js';
-import { kvGet, kvSet, logEvent, q } from '../db.js';
+import { config, partnerPnJid } from '../../config.js';
+import type { Incoming } from '../../core/conversation.js';
+import type { Messenger, Presence, Visual } from '../../core/ports.js';
+import { kvGet, kvSet, logEvent } from '../../store/db.js';
+import { insertMessage, isBotMessage, updateBody } from '../../store/messages.js';
 import { usePgAuthState } from './auth.js';
+import { describe } from './describe.js';
 
-import { describe, type IncomingKind } from './describe.js';
-export type { IncomingKind };
-
-export interface Parsed {
-  waId: string;
-  fromMe: boolean;
-  kind: IncomingKind;
-  body: string;
-  ts: Date;
-  key: WAMessageKey;
-  /** True when there's something Claude can look at (photo, sticker, video thumbnail, link preview). */
-  hasVisual: boolean;
-}
-
-type Handler = {
-  onPartnerMessage: (m: Parsed, raw: WAMessage) => void | Promise<void>;
-  /** She edited or deleted a message: whatever was queued may be wrong now. */
-  onPartnerChanged: () => void | Promise<void>;
+/** What the adapter reports to the core. */
+export interface InboundHandler {
+  onIncoming(m: Incoming, raw: WAMessage): Promise<void>;
+  /** She edited or deleted a message. */
+  onChanged(): Promise<void>;
   /** She called and nobody picked up. */
-  onMissedCall: (isVideo: boolean) => void | Promise<void>;
-  onManualReply: (m: Parsed) => void | Promise<void>;
-  onSelfCommand: (text: string) => void | Promise<void>;
-};
+  onMissedCall(isVideo: boolean): Promise<void>;
+  /** You wrote to her from your phone. */
+  onManual(m: Incoming): Promise<void>;
+  /** You wrote a /command in your own chat. */
+  onCommand(text: string): Promise<void>;
+}
 
 const log = pino({ level: config.logLevel === 'debug' ? 'debug' : 'warn' });
 
@@ -58,7 +50,7 @@ function pickBrowser(): [string, string, string] {
   }
 }
 
-class WhatsApp {
+class WhatsApp implements Messenger {
   sock: WASocket | null = null;
   qrDataUrl: string | null = null;
   connected = false;
@@ -67,12 +59,12 @@ class WhatsApp {
   /** Ids of messages the bot sent, so we can tell them apart from you typing on your phone. */
   private botIds = new Set<string>();
   private sentCache = new Map<string, proto.IMessage>();
-  private handler!: Handler;
+  private handler!: InboundHandler;
   private stopping = false;
   private retries = 0;
   lastStatus = 'iniciando…';
 
-  async start(handler: Handler) {
+  async start(handler: InboundHandler) {
     this.handler = handler;
     // The learned LID belongs to whichever number was configured when it was learned.
     const saved = await kvGet<{ pn: string; lid: string } | string | null>('partner_lid', null);
@@ -169,8 +161,7 @@ class WhatsApp {
         if (!this.isPartnerChat(raw.key)) continue;
         const p = this.parse(raw);
         if (!p || p.kind === 'reaction') continue;
-        await storeMessage(p, 'human', 'history');
-        n++;
+        if (await insertMessage(p, p.fromMe && (await isBotMessage(p.waId)) ? 'bot' : 'human', 'history')) n++;
       }
       if (n) await logEvent('history_sync', `${n} messages`);
     });
@@ -189,7 +180,7 @@ class WhatsApp {
         try {
           await this.route(raw);
         } catch (e) {
-          log.error(e, 'route failed');
+          console.log('[wa] route failed:', (e as Error)?.stack ?? e);
         }
       }
     });
@@ -201,13 +192,11 @@ class WhatsApp {
     if (edited) {
       const d = describe(edited);
       if (!d) return;
-      const r = await q(`update messages set body = $2 where wa_id = $1`, [u.key.id, `${d.body} (editado)`]);
-      if (r.rowCount) await this.handler.onPartnerChanged();
+      if (await updateBody(u.key.id, `${d.body} (editado)`)) await this.handler.onChanged();
       return;
     }
     if (u.update?.message === null || u.update?.messageStubType === 1 /* REVOKE */) {
-      const r = await q(`update messages set body = '[eliminó este mensaje]', kind = 'other' where wa_id = $1`, [u.key.id]);
-      if (r.rowCount) await this.handler.onPartnerChanged();
+      if (await updateBody(u.key.id, '[eliminó este mensaje]', 'other')) await this.handler.onChanged();
     }
   }
 
@@ -244,7 +233,7 @@ class WhatsApp {
     // Commands you send to yourself ("Message yourself" chat): /stop, /start, /pause 60, /status
     if (key.fromMe && this.isSelfChat(key)) {
       const text = this.textOf(raw);
-      if (text?.startsWith('/')) await this.handler.onSelfCommand(text.trim());
+      if (text?.startsWith('/')) await this.handler.onCommand(text.trim());
       return;
     }
 
@@ -257,14 +246,14 @@ class WhatsApp {
     if (!p) return;
 
     if (p.fromMe) {
-      if (this.botIds.has(p.waId)) return; // our own send, already stored by the sender
-      await storeMessage(p, 'human', 'live');
-      await this.handler.onManualReply(p);
+      // The bot's own sends echo back here (also after a restart): never mistake them for you.
+      if (this.botIds.has(p.waId) || (await isBotMessage(p.waId))) return;
+      if (await insertMessage(p, 'human', 'live')) await this.handler.onManual(p);
       return;
     }
-    await storeMessage(p, 'human', 'live');
+    if (!(await insertMessage(p, 'human', 'live'))) return; // duplicate delivery
     if (p.kind === 'reaction') return; // her reaction to your message: context, nothing to answer
-    await this.handler.onPartnerMessage(p, raw);
+    await this.handler.onIncoming(p, raw);
   }
 
   // ---------- helpers ----------
@@ -308,7 +297,7 @@ class WhatsApp {
     );
   }
 
-  parse(raw: WAMessage): Parsed | null {
+  parse(raw: WAMessage): Incoming | null {
     if (!raw.key.id) return null;
     const d = describe(raw.message);
     if (!d) return null;
@@ -332,7 +321,7 @@ class WhatsApp {
   }
 
   /** The image Claude should see for this message (photo, sticker, video thumbnail, link preview). */
-  async visualOf(raw: WAMessage): Promise<{ data: string; mediaType: string; label: string } | null> {
+  async visualOf(raw: WAMessage): Promise<Visual | null> {
     const d = describe(raw.message);
     if (!d?.visual) return null;
     try {
@@ -357,7 +346,7 @@ class WhatsApp {
     if (keys.length) await this.sock?.readMessages(keys);
   }
 
-  async presence(state: 'available' | 'unavailable' | 'composing' | 'recording' | 'paused') {
+  async presence(state: Presence) {
     const to = state === 'composing' || state === 'recording' || state === 'paused' ? this.partnerTarget : undefined;
     await this.sock?.sendPresenceUpdate(state, to);
   }
@@ -383,17 +372,22 @@ class WhatsApp {
     return id;
   }
 
-  async react(key: WAMessageKey, emoji: string) {
+  async react(key: WAMessageKey, emoji: string): Promise<string> {
     if (!this.sock || !this.connected) throw new Error('WhatsApp not connected');
     const id = generateMessageIDV2(this.sock.user?.id);
     this.botIds.add(id);
     await this.sock.sendMessage(this.partnerTarget, { react: { text: emoji, key } }, { messageId: id });
+    return id;
   }
 
   /** Message to your own "Message yourself" chat (alerts from the bot). */
   async notifySelf(text: string) {
-    if (!this.sock || !this.connected || !this.me.pn) return;
-    await this.sock.sendMessage(this.me.pn, { text: `🤖 ${text}` }).catch(() => {});
+    if (!this.sock || !this.connected || !this.me.pn) {
+      console.log(`[notify] WhatsApp not connected, alert only logged: ${text.slice(0, 200)}`);
+      await logEvent('alert_undelivered', text.slice(0, 300));
+      return;
+    }
+    await this.sock.sendMessage(this.me.pn, { text: `🤖 ${text}` });
   }
 
   async logout() {
@@ -404,15 +398,6 @@ class WhatsApp {
     this.stopping = true;
     this.sock?.end(undefined);
   }
-}
-
-export async function storeMessage(p: Parsed, sentBy: 'human' | 'bot', source: 'live' | 'history') {
-  await q(
-    `insert into messages (wa_id, from_me, sent_by, kind, body, ts, raw_key, source)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)
-     on conflict (wa_id) do nothing`,
-    [p.waId, p.fromMe, sentBy, p.kind, p.body, p.ts, JSON.stringify(p.key), source],
-  );
 }
 
 export const wa = new WhatsApp();

@@ -14,4 +14,4 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/web/dist ./web/dist
 COPY package.json ./
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/app/main.js"]
