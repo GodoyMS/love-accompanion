@@ -58,6 +58,11 @@ export async function getSettings(): Promise<Settings> {
       // Sleep hours were on by default before; you asked for "always there", so start from off.
       saved.quietHours = null;
       saved._v = 3;
+    }
+    if ((saved._v ?? 0) < 4 && Object.keys(saved).length) {
+      // You asked for fully autonomous, always-on replies: sleep hours off.
+      saved.quietHours = null;
+      saved._v = 4;
       await kvSet('settings', saved);
     }
     cache = { ...DEFAULT_SETTINGS, ...saved, autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) } };
@@ -66,7 +71,7 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
-  const next = { ...(await getSettings()), ...patch, _v: 3 };
+  const next = { ...(await getSettings()), ...patch, _v: 4 };
   await kvSet('settings', next);
   cache = next;
   return next;
