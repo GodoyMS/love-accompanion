@@ -54,7 +54,7 @@ function rules(a: Autonomy) {
 
   return `${STYLE_RULES}
 
-SIEMPRE respondes tú. Yo no voy a contestar: tú me reemplazas. Nunca dejes un mensaje de ella sin respuesta por ser delicado; "wait" es solo para cuando la conversación ya cerró naturalmente.
+SIEMPRE respondes tú. Yo no voy a contestar: tú me reemplazas. Nunca la dejes en visto: cada mensaje suyo recibe al menos una reacción, y nunca dejes uno sin respuesta por ser delicado.
 
 Temas delicados (responde tú y pon en "alert" una línea para mi registro):
 ${delicate.join('\n')}
@@ -82,8 +82,7 @@ Usa "disclose" (nunca lo niegues ni inventes una excusa) cuando:
 Tú no escribes ese mensaje: se envía un texto ya definido. Deja "messages" vacío.
 Si en la conversación reciente ya se le dijo que no soy yo, no lo repitas por cada broma o comentario: sigue acompañándola con cariño, sin volver a fingir que eres yo y sin negarlo; si vuelve a preguntar, confírmalo con naturalidad en "reply".
 
-Usa "react" para mensajes que solo piden un gesto (un "te quiero", una foto bonita, un "llegué"), con un solo emoji que yo usaría.
-Usa "wait" si la conversación ya cerró naturalmente (ej. "ok", "buenas noches" después de que ya me despedí).
+Usa "react" (un solo emoji que yo usaría) para mensajes que solo piden un gesto (un "te quiero", una foto bonita, un "llegué") y cuando la conversación ya cerró naturalmente (ej. "ok", "jaja", "buenas noches" después de que ya me despedí). Si tienes duda entre reaccionar o responder, responde.
 En cualquier otro caso responde normal con "reply", deja "alert" vacío y urgent=false.`;
 }
 
@@ -98,7 +97,7 @@ const DECISION_SCHEMA = {
   additionalProperties: false,
   required: ['action', 'messages', 'reaction', 'reason', 'alert', 'urgent', 'direct'],
   properties: {
-    action: { type: 'string', enum: ['reply', 'react', 'wait', 'disclose'] },
+    action: { type: 'string', enum: ['reply', 'react', 'disclose'] },
     direct: { type: 'boolean', description: 'Solo si action=disclose: true si pregunta directamente si es un bot/IA/programa; false si solo duda de que sea yo.' },
     messages: {
       type: 'array',
@@ -166,7 +165,7 @@ async function decide({ ctx, images, autonomy, voice, disclosed, hint }: DecideI
     ]),
     {
       type: 'text',
-      text: `Ahora es ${localStamp(new Date())}.\n\n# Conversación reciente\n${ctx.transcript}\n\n# Mensajes nuevos de ella que debo responder\n${newMsgs}${hint ? `\n\nNota: ${hint}` : ''}${voice ? '\n\nElla te habló por nota de voz, así que vas a responder con UNA nota de voz con mi voz: en "messages" pon un solo texto con exactamente lo que yo diría hablando, natural y con mi forma de hablar, de 1 a 4 frases, con energía y cariño, como le hablo de verdad: cálido, animado, expresivo, con emoción real (alegría, ternura, preocupación según el momento), no plano ni de locutor. Usa signos de exclamación e interrogación para dar entonación ("¡amor!", "¿en serio?", "¡qué bueno!"), alguna expresión natural como "ay", "oye", "mmm", y frases cortas con ritmo. Sin modismos regionales que yo no uso en el chat, sin emojis, sin abreviaturas de chat, sin "jaja" escrito salvo que lo diría en voz alta. Si es mejor solo reaccionar o no responder, puedes usar "react" o "wait" igual.' : ''}\n\nDecide qué hacer y responde con el JSON pedido.`,
+      text: `Ahora es ${localStamp(new Date())}.\n\n# Conversación reciente\n${ctx.transcript}\n\n# Mensajes nuevos de ella que debo responder\n${newMsgs}${hint ? `\n\nNota: ${hint}` : ''}${voice ? '\n\nElla te habló por nota de voz, así que vas a responder con UNA nota de voz con mi voz: en "messages" pon un solo texto con exactamente lo que yo diría hablando, natural y con mi forma de hablar, de 1 a 4 frases, con energía y cariño, como le hablo de verdad: cálido, animado, expresivo, con emoción real (alegría, ternura, preocupación según el momento), no plano ni de locutor. Usa signos de exclamación e interrogación para dar entonación ("¡amor!", "¿en serio?", "¡qué bueno!"), alguna expresión natural como "ay", "oye", "mmm", y frases cortas con ritmo. Sin modismos regionales que yo no uso en el chat, sin emojis, sin abreviaturas de chat, sin "jaja" escrito salvo que lo diría en voz alta. Si basta con un gesto, puedes usar "react".' : ''}\n\nDecide qué hacer y responde con el JSON pedido.`,
     },
   ];
 
@@ -181,10 +180,10 @@ async function decide({ ctx, images, autonomy, voice, disclosed, hint }: DecideI
       if (!msgs.length) throw new NoAnswer('respuesta vacía');
       return { action: 'reply', messages: msgs, alert, urgent: !!input.urgent };
     }
+    // Never leave her on "seen": a reaction without an emoji (or an old "wait") becomes a heart.
     case 'react':
-      return input.reaction ? { action: 'react', reaction: String(input.reaction).trim() } : { action: 'wait' };
     case 'wait':
-      return { action: 'wait' };
+      return { action: 'react', reaction: String(input.reaction ?? '').trim() || '❤️' };
     case 'disclose':
       return { action: 'disclose', direct: !!input.direct, reason: String(input.reason ?? '') };
     default:

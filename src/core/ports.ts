@@ -53,7 +53,6 @@ export type Decision =
   /** urgent = a real emergency: answered at once, and you are pinged. */
   | { action: 'reply'; messages: string[]; alert?: string; urgent?: boolean }
   | { action: 'react'; reaction: string }
-  | { action: 'wait' }
   /** Only when the model gave no usable answer twice (the model itself can't choose it). */
   | { action: 'handoff'; reason: string }
   | { action: 'disclose'; direct: boolean; reason: string };
