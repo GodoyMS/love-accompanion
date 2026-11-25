@@ -147,12 +147,12 @@ export class Conversation {
 
       const s = await getSettings();
       const version = this.version;
-      const last = ctx.pending[ctx.pending.length - 1];
       const input: DecideInput = {
         ctx,
         images: await this.visuals(ctx.pending),
         autonomy: s.autonomy,
-        voice: s.voiceReplies && ports.speech.canSpeak() && last.kind === 'audio',
+        // She spoke to you at some point in this batch (e.g. a voice note, then a text): answer by voice.
+        voice: s.voiceReplies && ports.speech.canSpeak() && ctx.pending.some((t) => t.kind === 'audio'),
         disclosed: await this.disclosed(),
       };
 
