@@ -1,7 +1,7 @@
 import type { WAMessage } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import { config, missingConfig } from '../config.js';
-import { logEvent, q } from '../db.js';
+import { kvGet, kvSet, logEvent, q } from '../db.js';
 import { canSend, cancelPending, getSettings, pauseFor, setEnabled } from '../settings.js';
 import { quietHoursEnd, rand } from '../time.js';
 import { wa, type Parsed } from '../wa/client.js';
@@ -84,7 +84,15 @@ async function think() {
         );
         if (d.alert) {
           await logEvent('alert', d.alert);
-          await wa.notifySelf(`Le respondí yo, pero para que sepas: ${d.alert}\n\nElla: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\nYo: "${d.messages.join(' / ')}"\n\nSi prefieres responder tú, escríbele ahora y me aparto (o /pause 60).`);
+          // One heads-up per topic is enough: don't ping you on every follow-up message.
+          const last = await kvGet<number>('last_alert_at', 0);
+          if (Date.now() - last > 30 * 60_000) {
+            await kvSet('last_alert_at', Date.now());
+            const at = sendAt.toLocaleTimeString('es-PE', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit' });
+            await wa.notifySelf(
+              `Tema delicado, lo estoy llevando yo: ${d.alert}\n\nElla: "${ctx.pending.map((m) => m.body).join(' / ').slice(0, 300)}"\nVoy a responder a las ${at}: "${d.messages.join(' / ')}"\n\nSi quieres tomarla tú, escríbele y me aparto (o /pause 60). No te vuelvo a avisar de esto en 30 min.`,
+            );
+          }
         }
         break;
       }

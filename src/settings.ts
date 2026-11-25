@@ -27,8 +27,8 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   enabled: false, // starts OFF: turn it on from the panel once you're happy with the profile
   pausedUntil: null,
-  debounceSec: [20, 60],
-  replyDelaySec: [10, 120],
+  debounceSec: [8, 25],
+  replyDelaySec: [5, 45],
   quietHours: [1, 7],
   takeoverMinutes: 30,
   autonomy: { feelings: true, conflicts: false, plans: false },
@@ -39,6 +39,9 @@ let cache: Settings | null = null;
 export async function getSettings(): Promise<Settings> {
   if (!cache) {
     const saved = await kvGet<Partial<Settings>>('settings', {});
+    // Old, slower defaults that were never customised → move to the faster ones.
+    if (String(saved.debounceSec) === '20,60') delete saved.debounceSec;
+    if (String(saved.replyDelaySec) === '10,120') delete saved.replyDelaySec;
     cache = { ...DEFAULT_SETTINGS, ...saved, autonomy: { ...DEFAULT_SETTINGS.autonomy, ...(saved.autonomy ?? {}) } };
   }
   return cache;
