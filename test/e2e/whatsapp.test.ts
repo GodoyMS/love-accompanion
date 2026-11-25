@@ -94,3 +94,18 @@ test('calls: missed → handed over; answered or long → not missed; strangers 
   await w.onCall({ id: 'C4', from: '51977777777@s.whatsapp.net', status: 'terminate' });
   assert.deepEqual(calls, ['missed:video']);
 });
+
+test('a message from her that cannot be decrypted is tracked; the resend clears it', async () => {
+  const stub = { key: { id: 'ENC1', remoteJid: HER, fromMe: false }, messageTimestamp: 1, messageStubType: 2, messageStubParameters: ['Bad MAC'] };
+  await w.route(stub);
+  assert.equal(w.undecrypted.has('ENC1'), true);
+  assert.deepEqual(calls, [], 'placeholder is not a message');
+  await w.route(msg({ conversation: 'ya llegó' }, { id: 'ENC1' }));
+  assert.equal(w.undecrypted.has('ENC1'), false);
+  assert.deepEqual(calls, ['incoming:text:ya llegó']);
+});
+
+test('undecryptable messages from other chats are ignored', async () => {
+  await w.route({ key: { id: 'ENC2', remoteJid: '51977777777@s.whatsapp.net', fromMe: false }, messageTimestamp: 1, messageStubType: 2 });
+  assert.equal(w.undecrypted.has('ENC2'), false);
+});

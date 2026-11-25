@@ -5,7 +5,9 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   generateMessageIDV2,
   jidNormalizedUser,
+  makeCacheableSignalKeyStore,
   normalizeMessageContent,
+  proto as WAProto,
   type WAMessage,
   type WAMessageKey,
   type WASocket,
@@ -87,7 +89,9 @@ class WhatsApp implements Messenger {
 
     const sock = makeWASocket({
       version,
-      auth: state,
+      // In-memory cache in front of the Postgres key store (Baileys' recommended setup): far fewer
+      // round-trips and no half-written session keys under bursts, which cause decrypt failures.
+      auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, log as any) },
       logger: log as any,
       browser: pickBrowser(),
       markOnlineOnConnect: false, // keep your phone getting notifications and don't look "always online"
@@ -226,9 +230,44 @@ class WhatsApp implements Messenger {
     }
   }
 
+  /** Her messages WhatsApp delivered but we couldn't decrypt yet (waiting for the phone to resend). */
+  private undecrypted = new Map<string, NodeJS.Timeout>();
+
+  /**
+   * WhatsApp hands us an encrypted placeholder when a message can't be decrypted; Baileys asks her
+   * phone to resend it and the real message usually arrives seconds later with the same id.
+   * If it doesn't, tell you: otherwise that message would be lost in silence.
+   */
+  private trackUndecrypted(raw: WAMessage) {
+    const id = raw.key.id!;
+    if (this.undecrypted.has(id)) return;
+    console.log(`[wa] couldn't decrypt a message from her (${raw.messageStubParameters?.[0] ?? 'unknown'}), waiting for a resend`);
+    const t = setTimeout(async () => {
+      this.undecrypted.delete(id);
+      console.log('[wa] her message never became readable');
+      await logEvent('undecryptable', String(raw.messageStubParameters?.[0] ?? ''));
+      await this.notifySelf(
+        'Ella te escribió algo que WhatsApp no dejó leer al bot (pasa a veces con mensajes cifrados). Revísalo en tu celular; el bot sigue funcionando normal.',
+      ).catch(() => {});
+    }, 3 * 60_000);
+    t.unref?.();
+    this.undecrypted.set(id, t);
+  }
+
   private async route(raw: WAMessage) {
     const key = raw.key;
     if (!key.remoteJid) return;
+
+    if (raw.messageStubType === WAProto.WebMessageInfo.StubType.CIPHERTEXT) {
+      if (!key.fromMe && this.isPartnerChat(key) && key.id) this.trackUndecrypted(raw);
+      return;
+    }
+    // The real content arrived (e.g. her phone resent it): no longer missing.
+    if (key.id && this.undecrypted.has(key.id)) {
+      clearTimeout(this.undecrypted.get(key.id)!);
+      this.undecrypted.delete(key.id);
+      console.log('[wa] her message became readable after a resend');
+    }
 
     // Commands you send to yourself ("Message yourself" chat): /stop, /start, /pause 60, /status
     if (key.fromMe && this.isSelfChat(key)) {

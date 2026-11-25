@@ -217,10 +217,6 @@ export class Conversation {
     const readKeys = pending.map((t) => t.raw_key).filter(Boolean);
 
     switch (d.action) {
-      case 'wait':
-        await logEvent('wait', last.body.slice(0, 120));
-        return;
-
       case 'handoff':
         // Only reached when the model failed twice.
         await logEvent('handoff', `${d.reason} — ${preview(pending)}`);

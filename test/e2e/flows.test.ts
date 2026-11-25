@@ -98,12 +98,12 @@ describe('replying', () => {
     assert.deepEqual(wa.sent, [{ kind: 'react', body: '❤️', id: 'BOT1' }]);
   });
 
-  test('"wait" sends nothing', async () => {
-    brain.next({ action: 'wait' });
-    await her('ok');
+  test('never leaves her on "seen": every message gets at least a reaction', async () => {
+    // Even if the model only says "react" without an emoji.
+    brain.next({ action: 'react', reaction: '' } as any);
+    await her('jaja ok');
     await settle();
-    assert.equal(wa.sent.length, 0);
-    assert.equal((await events('wait')).length, 1);
+    assert.deepEqual(wa.sent, [{ kind: 'react', body: '❤️', id: 'BOT1' }]);
   });
 });
 

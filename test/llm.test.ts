@@ -70,3 +70,11 @@ test('the model can no longer hand the conversation back to you', async () => {
   respond({ text: answer({ messages: [] }), stop: 'end_turn' });
   await assert.rejects(decide(ctx, [], autonomy), (e) => e instanceof NoAnswer);
 });
+
+test('the model can no longer leave her on "seen": react without an emoji (or an old "wait") becomes ❤️', async () => {
+  const ctx = { profile: '', styleText: '', memoriesText: '', examplesText: '', voiceText: '', transcript: '', pending: [{ body: 'ok' }] };
+  respond({ text: '{"action":"react","messages":[],"reaction":"","reason":"","alert":"","urgent":false,"direct":false}', stop: 'end_turn' });
+  assert.deepEqual(await decide(ctx, [], {}), { action: 'react', reaction: '❤️' });
+  respond({ text: '{"action":"wait","messages":[],"reaction":"","reason":"","alert":"","urgent":false,"direct":false}', stop: 'end_turn' });
+  assert.deepEqual(await decide(ctx, [], {}), { action: 'react', reaction: '❤️' });
+});

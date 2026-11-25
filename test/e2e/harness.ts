@@ -93,7 +93,8 @@ export class FakeBrain {
     if (this.gate) await this.gate;
     const d = this.queue.shift() ?? { action: 'reply', messages: [`respuesta ${this.inputs.length}`] };
     if (d instanceof Error) throw d;
-    return typeof d === 'function' ? d(input) : d;
+    const out = typeof d === 'function' ? await d(input) : d;
+    return out.action === 'react' && !out.reaction ? { ...out, reaction: '❤️' } : out;
   }
   get last() {
     return this.inputs[this.inputs.length - 1];
