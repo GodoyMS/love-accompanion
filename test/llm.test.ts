@@ -7,6 +7,7 @@ process.env.ANTHROPIC_API_KEY = 'test';
 const { claudeBrain } = await import('../src/adapters/claude.ts');
 const { NoAnswer } = await import('../src/core/ports.ts');
 const extractMemories = claudeBrain.remember;
+const decide = (ctx: any, images: any[], autonomy: any) => claudeBrain.decide({ ctx, images, autonomy, voice: false, disclosed: false });
 
 // The SDK keeps the fetch it saw first, so install one mock that reads a mutable queue.
 let queue: { text: string; stop: string }[] = [];
@@ -52,4 +53,20 @@ test('a refusal becomes NoAnswer instead of a JSON crash', async () => {
 test('garbage twice becomes NoAnswer', async () => {
   respond({ text: '{"facts": [', stop: 'end_turn' }, { text: 'nope', stop: 'end_turn' });
   await assert.rejects(extractMemories('t', ''), (e) => e instanceof NoAnswer);
+});
+
+const ctx = { profile: '', styleText: '', voiceText: '', memoriesText: '', examplesText: '', transcript: '', pending: [{ body: 'me duele la panza' }] } as any;
+const autonomy = { feelings: true, health: true, conflicts: false, plans: false };
+const answer = (o: object) => JSON.stringify({ action: 'reply', messages: [], reaction: '', reason: '', alert: '', urgent: false, direct: false, ...o });
+
+test('an emergency is still a reply, flagged urgent', async () => {
+  respond({ text: answer({ messages: ['amor ve a emergencia ya'], alert: 'dolor fuerte', urgent: true }), stop: 'end_turn' });
+  assert.deepEqual(await decide(ctx, [], autonomy), { action: 'reply', messages: ['amor ve a emergencia ya'], alert: 'dolor fuerte', urgent: true });
+});
+
+test('the model can no longer hand the conversation back to you', async () => {
+  respond({ text: answer({ action: 'handoff', reason: 'te toca' }), stop: 'end_turn' });
+  await assert.rejects(decide(ctx, [], autonomy), (e) => e instanceof NoAnswer);
+  respond({ text: answer({ messages: [] }), stop: 'end_turn' });
+  await assert.rejects(decide(ctx, [], autonomy), (e) => e instanceof NoAnswer);
 });

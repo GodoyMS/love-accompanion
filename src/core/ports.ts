@@ -45,12 +45,16 @@ export interface DecideInput {
   voice: boolean;
   /** She was already told a stand-in sometimes answers. */
   disclosed: boolean;
+  /** Extra instruction for a retry ("answer no matter what"). */
+  hint?: string;
 }
 
 export type Decision =
-  | { action: 'reply'; messages: string[]; alert?: string }
+  /** urgent = a real emergency: answered at once, and you are pinged. */
+  | { action: 'reply'; messages: string[]; alert?: string; urgent?: boolean }
   | { action: 'react'; reaction: string }
   | { action: 'wait' }
+  /** Only when the model gave no usable answer twice (the model itself can't choose it). */
   | { action: 'handoff'; reason: string }
   | { action: 'disclose'; direct: boolean; reason: string };
 

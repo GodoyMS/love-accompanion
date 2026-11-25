@@ -42,7 +42,8 @@ export interface Settings {
   voiceReplies: boolean;
   autonomy: Autonomy;
   voice: VoiceTuning;
-  disclosure: { doubtText: string; directText: string; pauseHours: number };
+  /** What the bot says when she doubts it's you, or asks straight out if it's a bot. It keeps answering after. */
+  disclosure: { doubtText: string; directText: string };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -54,13 +55,13 @@ export const DEFAULT_SETTINGS: Settings = {
   handBackMinutes: 2,
   voiceReplies: true,
   autonomy: { feelings: true, health: true, conflicts: false, plans: false },
-  voice: { model: 'eleven_multilingual_v2', speed: 0.9, stability: 0.65, similarity: 0.9, style: 0 },
+  // Warm and lively, close to your real voice.
+  voice: { model: 'eleven_multilingual_v2', speed: 1.02, stability: 0.4, similarity: 0.85, style: 0.35 },
   disclosure: {
     doubtText:
-      'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Ya le aviso para que te escriba él.',
+      'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Igual aquí sigo para acompañarte.',
     directText:
-      'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Ya le aviso para que te escriba él.',
-    pauseHours: 12,
+      'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Igual aquí sigo para acompañarte.',
   },
 };
 
@@ -117,14 +118,15 @@ export function normalizeSettings(input: any, base: Settings = DEFAULT_SETTINGS)
     disclosure: {
       doubtText: text(i.disclosure?.doubtText, base.disclosure.doubtText),
       directText: text(i.disclosure?.directText, base.disclosure.directText),
-      pauseHours: num(i.disclosure?.pauseHours, 0, 168, base.disclosure.pauseHours),
     },
   };
 }
 
 // ---------- persistence ----------
 
-const VERSION = 4;
+const VERSION = 6;
+const OLD_DOUBT = 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Ya le aviso para que te escriba él.';
+const OLD_DIRECT = 'Sí, te soy sincero: soy un programa que Godoy configuró para responderte cuando él no puede contestar. Ya le aviso para que te escriba él.';
 let cache: Settings | null = null;
 
 /** Fired after the bot becomes able to send again (enabled or resumed). */
@@ -142,6 +144,14 @@ export async function migrateSettings() {
     delete saved.takeoverMinutes;
   }
   if (v < 4) saved.quietHours = null; // you asked for always-on
+  // The calm/neutral voice sounded flat: more energy and expression (keeps your model).
+  if (v < 5 && saved.voice) saved.voice = { ...saved.voice, speed: 1.02, stability: 0.4, similarity: 0.85, style: 0.35 };
+  if (v < 6 && saved.disclosure) {
+    // No more pause after telling her; drop the "ya le aviso" promise from the old default texts.
+    delete saved.disclosure.pauseHours;
+    if (saved.disclosure.doubtText === OLD_DOUBT) saved.disclosure.doubtText = DEFAULT_SETTINGS.disclosure.doubtText;
+    if (saved.disclosure.directText === OLD_DIRECT) saved.disclosure.directText = DEFAULT_SETTINGS.disclosure.directText;
+  }
   await kvSet('settings', { ...normalizeSettings(saved), _v: VERSION });
   cache = null;
 }

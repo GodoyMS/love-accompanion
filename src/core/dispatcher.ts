@@ -1,7 +1,7 @@
 import { kvSet, logEvent } from '../store/db.js';
 import * as messages from '../store/messages.js';
 import * as replies from '../store/replies.js';
-import { canSend, getSettings, pauseFor } from '../store/settings.js';
+import { canSend } from '../store/settings.js';
 import { notifyOnce } from './notify.js';
 import { ports } from './ports.js';
 
@@ -128,10 +128,8 @@ export class Dispatcher {
       await logEvent('sent', `${job.kind}: ${job.parts.join(' | ') || job.reaction}`);
       console.log(`[send] ${job.kind} delivered (${delivered} message(s))`);
 
-      if (job.kind === 'disclose') {
-        await kvSet('disclosed_at', clock.now());
-        await pauseFor((await getSettings()).disclosure.pauseHours * 60, 'le dijo que no eras tú');
-      }
+      // She now knows a stand-in sometimes answers. The bot keeps running: it only pauses when you say so.
+      if (job.kind === 'disclose') await kvSet('disclosed_at', clock.now());
       this.offline = setTimeout(() => void m.presence('unavailable').catch(() => {}), clock.rand(15_000, 60_000));
       this.offline.unref?.();
     } catch (e) {

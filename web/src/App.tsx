@@ -11,7 +11,7 @@ type Settings = {
   voiceReplies: boolean;
   autonomy: { feelings: boolean; health: boolean; conflicts: boolean; plans: boolean };
   voice: { model: string; speed: number; stability: number; similarity: number; style: number };
-  disclosure: { doubtText: string; directText: string; pauseHours: number };
+  disclosure: { doubtText: string; directText: string };
 };
 type Status = {
   settings: Settings;
@@ -427,7 +427,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
         <span className="muted small">El bot no se apaga: si contestas tú, descarta lo que tenía listo.</span>
       </label>
       <fieldset className="autonomy">
-        <legend>Temas delicados que responde solo (y te avisa)</legend>
+        <legend>Temas delicados: marcado = responde con soltura; desmarcado = responde corto y prudente</legend>
         {([
           ['feelings', 'Cuando está triste, cansada o "se siente mal"'],
           ['health', 'Síntomas físicos (la anima a ir al médico si es fuerte)'],
@@ -439,7 +439,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
             {label}
           </label>
         ))}
-        <p className="muted small">Siempre te pasa la conversación si es una emergencia clara (peligro, le cuesta respirar, sangrado, desmayo, hacerse daño) .</p>
+        <p className="muted small">Siempre responde él, nunca te pasa la conversación. En una emergencia clara (peligro, le cuesta respirar, sangrado, desmayo, hacerse daño, dolor fuerte que no cede) le responde al instante, aunque sean tus horas de sueño, pidiéndole que vaya a emergencia y avise a alguien cerca, y solo entonces te escribe por WhatsApp.</p>
       </fieldset>
       <fieldset className="autonomy">
         <legend>Si duda de que seas tú</legend>
@@ -449,10 +449,7 @@ function SettingsForm({ settings, onSaved }: { settings: Settings; onSaved: () =
         <label>Cuando pregunta directamente si es un bot o una IA
           <textarea rows={3} value={s.disclosure.directText} onChange={(e) => setS({ ...s, disclosure: { ...s.disclosure, directText: e.target.value } })} />
         </label>
-        <label>Después queda en pausa (horas)
-          <input type="number" value={s.disclosure.pauseHours} onChange={(e) => setS({ ...s, disclosure: { ...s.disclosure, pauseHours: num(e.target.value) } })} />
-        </label>
-        <p className="muted small">El bot nunca niega que no eres tú ni inventa una excusa. Te avisa al mismo tiempo y vuelve con /start.</p>
+        <p className="muted small">El bot nunca niega que no eres tú ni inventa una excusa. Te avisa y sigue respondiendo; solo se pausa si tú lo pides (/stop, /pause o el interruptor).</p>
       </fieldset>
       <button
         className="primary"
@@ -527,7 +524,7 @@ function VoiceTuner({ voice, onChange }: { voice: Settings['voice']; onChange: (
         </select>
       </label>
       {slider('speed', 'Velocidad', 0.7, 1.2, '(menos = más pausado)')}
-      {slider('stability', 'Estabilidad', 0, 1, '(más = más calmado y parejo)')}
+      {slider('stability', 'Estabilidad', 0, 1, '(menos = más energía y emoción)')}
       {slider('similarity', 'Parecido a tu voz', 0, 1, '(más = conserva tu acento)')}
       {slider('style', 'Estilo', 0, 1, '(0 = neutral, más = más actuado)')}
       <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} />

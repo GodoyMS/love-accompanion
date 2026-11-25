@@ -138,7 +138,7 @@ export async function reset(over: Partial<import('../../src/store/settings.ts').
   brain = new FakeBrain();
   speech = new FakeSpeech();
   ports.wire({ messenger: wa as any, brain: brain as any, speech: speech as any, clock: instant });
-  await db.kvSet('settings', { ...settings.DEFAULT_SETTINGS, enabled: true, debounceSec: [0, 0], replyDelaySec: [0, 0], ...over, _v: 4 });
+  await db.kvSet('settings', { ...settings.DEFAULT_SETTINGS, enabled: true, debounceSec: [0, 0], replyDelaySec: [0, 0], ...over, _v: 6 });
   await settings.reloadSettings();
 }
 

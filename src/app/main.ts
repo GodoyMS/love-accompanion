@@ -8,9 +8,9 @@ import { conversation } from '../core/conversation.js';
 import { dispatcher } from '../core/dispatcher.js';
 import { startMemoryJob, stopMemoryJob } from '../core/memory.js';
 import { wire } from '../core/ports.js';
-import { archiveIfPartnerChanged, logEvent, migrate, pool, sslFor } from '../store/db.js';
+import { archiveIfPartnerChanged, logEvent, migrate, pool, q, sslFor } from '../store/db.js';
 import { bringForwardParked, closeInterrupted } from '../store/replies.js';
-import { getSettings, migrateSettings } from '../store/settings.js';
+import { getSettings, migrateSettings, resume } from '../store/settings.js';
 import { buildServer } from './server.js';
 
 async function main() {
@@ -31,6 +31,13 @@ async function main() {
   await lock.connect();
   await lock.query('select pg_advisory_lock(4242001)');
   console.log('[boot] whatsapp lock acquired');
+
+  // Older versions paused on their own (when you typed, or after telling her it wasn't you).
+  // Lift that kind of pause, never one you set yourself.
+  const lastPause = String((await q(`select detail from events where type = 'paused' order by id desc limit 1`)).rows[0]?.detail ?? '');
+  if ((lastPause.includes('escribiste tú') || lastPause.includes('no eras tú')) && (await getSettings()).pausedUntil) {
+    await resume('sistema: quitar pausa automática antigua');
+  }
 
   const interrupted = await closeInterrupted();
   if (interrupted) console.log(`[boot] closed ${interrupted} reply(ies) interrupted by the last shutdown`);

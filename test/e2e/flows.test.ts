@@ -173,7 +173,7 @@ describe('kill switch and pause', () => {
     brain.next({ action: 'reply', messages: ['uno', 'dos'] });
     wa.onPresence = async (p, sent) => {
       // You flip the switch while it's typing the second message.
-      if (p === 'composing' && sent === 1) await db.kvSet('settings', { ...(await settings.getSettings()), enabled: false, _v: 4 });
+      if (p === 'composing' && sent === 1) await db.kvSet('settings', { ...(await settings.getSettings()), enabled: false, _v: 6 });
     };
     await her('hola');
     await settle();
@@ -226,38 +226,45 @@ describe('kill switch and pause', () => {
 describe('sensitive moments', () => {
   beforeEach(() => reset());
 
-  test('handoff alerts you once, not on every follow-up', async () => {
-    brain.next({ action: 'handoff', reason: 'emergencia' }, { action: 'handoff', reason: 'emergencia' });
-    await her('me caí');
+  test('an emergency is answered within seconds — ignoring delays, your hand-back and sleep hours — and pings you once', async () => {
+    const h = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Lima', hour: 'numeric', hour12: false })) % 24;
+    await reset({ replyDelaySec: [600, 600], handBackMinutes: 30, quietHours: [h, (h + 2) % 24] });
+    await me('hola');
+    brain.next(
+      { action: 'reply', messages: ['amor, ve a emergencia ya y avísale a alguien cerca'], alert: 'le cuesta respirar', urgent: true },
+      { action: 'reply', messages: ['¿ya saliste?'], alert: 'sigue mal', urgent: true },
+    );
+    await her('no puedo respirar');
     await settle();
+    const [r] = await queue();
+    assert.ok(new Date(r.send_at).getTime() - Date.now() < 15_000, 'goes out within seconds');
     await her('ayuda');
     await settle();
-    assert.equal(wa.sent.length, 0);
-    assert.equal(wa.notes.filter((n) => n.startsWith('No le respondí')).length, 1);
+    assert.equal(wa.notes.filter((n) => n.startsWith('Emergencia')).length, 1, 'one ping per 30 min');
+    assert.deepEqual(await events('urgent'), ['le cuesta respirar', 'sigue mal']);
   });
 
-  test('a reply with an alert sends the reply and tells you', async () => {
+  test('delicate but normal topics are answered and only logged (no ping)', async () => {
     brain.next({ action: 'reply', messages: ['ay amor, ¿qué sientes?'], alert: 'se siente mal' });
     await her('me siento mal');
     await settle();
     assert.equal(wa.sent.length, 1);
-    assert.equal(wa.notes.length, 1);
-    assert.match(wa.notes[0], /Tema delicado.*se siente mal/s);
+    assert.equal(wa.notes.length, 0);
+    assert.deepEqual(await events('alert'), ['se siente mal']);
   });
 
-  test('disclosure: tells her the configured text, pauses, and later answers honestly', async () => {
+  test('disclosure: tells her the configured text, keeps running, and from then on answers honestly', async () => {
     brain.next({ action: 'disclose', direct: false, reason: 'notó la voz' });
     await her('¿qué le pasó a tu voz?');
     await settle();
     const s = await settings.reloadSettings();
     assert.deepEqual(wa.sent.map((x) => x.body), [s.disclosure.doubtText]);
-    assert.ok(settings.isPaused(s), 'paused after telling her');
-    assert.match(wa.notes[0], /dudó de que fueras tú/);
-    // You bring it back: from now on Claude is told she knows.
-    await handleCommand('/start');
+    assert.ok(!settings.isPaused(s), 'does not pause on its own');
+    assert.match(wa.notes[0], /dudó de que fueras tú.*Sigo respondiéndole/s);
     await her('ok, ¿y entonces?');
     await settle();
     assert.equal(brain.last.disclosed, true);
+    assert.equal(wa.sent.length, 2);
   });
 
   test('direct "are you a bot?" gets the direct text', async () => {
@@ -267,13 +274,25 @@ describe('sensitive moments', () => {
     assert.equal(wa.sent[0].body, (await settings.getSettings()).disclosure.directText);
   });
 
-  test('a model refusal becomes a handoff, never a crash', async () => {
+  test('no usable answer: retries once insisting on a reply, so she still gets one', async () => {
     const { NoAnswer } = await import('../../src/core/ports.ts');
-    brain.next(new NoAnswer('el modelo no quiso responder'));
+    brain.next(new NoAnswer('el modelo no quiso responder'), { action: 'reply', messages: ['aquí estoy amor'] });
     await her('algo');
     await settle();
+    assert.deepEqual(wa.sent.map((s) => s.body), ['aquí estoy amor']);
+    assert.match(brain.last.hint ?? '', /responderle tú sí o sí/);
+    assert.equal(wa.notes.length, 0);
+  });
+
+  test('two failures in a row: you are told once, never a crash', async () => {
+    const { NoAnswer } = await import('../../src/core/ports.ts');
+    brain.next(new NoAnswer('nada'), new NoAnswer('nada'), new NoAnswer('nada'), new NoAnswer('nada'));
+    await her('uno');
+    await settle();
+    await her('dos');
+    await settle();
     assert.equal(wa.sent.length, 0);
-    assert.match(wa.notes[0], /No le respondí.*no quiso responder/s);
+    assert.equal(wa.notes.filter((n) => n.startsWith('No pude generar una respuesta')).length, 1);
   });
 
   test('an unexpected error alerts you once and the next message still works', async () => {
@@ -465,7 +484,8 @@ describe('sleep hours', () => {
     await her('hola');
     await settle();
     assert.equal(wa.sent.length, 0);
-    assert.match(wa.notes[0], /horas de sueño/);
+    assert.equal(wa.notes.length, 0, 'no WhatsApp ping while you sleep');
+    assert.match((await events('deferred'))[0], /horas de sueño, sale a las/);
   });
 });
 
@@ -487,17 +507,24 @@ describe('settings validation', () => {
     assert.equal(s.voice.speed, 1.2);
     assert.equal(s.voice.model, 'eleven_multilingual_v2');
     assert.equal(s.disclosure.doubtText, settings.DEFAULT_SETTINGS.disclosure.doubtText);
-    assert.equal(s.disclosure.pauseHours, 168);
+    assert.equal((s.disclosure as any).pauseHours, undefined);
     assert.equal((s as any).evil, undefined);
   });
 
-  test('old saved settings are migrated once (sleep hours off, slow defaults replaced)', async () => {
+  test('old saved settings are migrated once (sleep hours off, slow defaults replaced, livelier voice, no pause texts)', async () => {
     await reset();
-    await db.kvSet('settings', { enabled: true, quietHours: [3, 7], debounceSec: [20, 60], takeoverMinutes: 30 });
+    await db.kvSet('settings', {
+      enabled: true, quietHours: [3, 7], debounceSec: [20, 60], takeoverMinutes: 30,
+      voice: { model: 'eleven_flash_v2_5', speed: 0.9, stability: 0.65, similarity: 0.9, style: 0 },
+      disclosure: { pauseHours: 12, doubtText: 'Amor, te soy sincero: no soy Godoy, soy un reemplazo suyo para que no te quedes sin respuesta cuando él no puede contestar. Ya le aviso para que te escriba él.', directText: 'mi texto' },
+    });
     await settings.migrateSettings();
     const s = await settings.reloadSettings();
     assert.equal(s.quietHours, null);
     assert.deepEqual(s.debounceSec, [8, 25]);
+    assert.deepEqual(s.voice, { model: 'eleven_flash_v2_5', speed: 1.02, stability: 0.4, similarity: 0.85, style: 0.35 });
+    assert.match(s.disclosure.doubtText, /Igual aquí sigo/);
+    assert.equal(s.disclosure.directText, 'mi texto', 'your own text is kept');
     // A later choice of yours survives the next boot.
     await settings.updateSettings({ quietHours: [1, 6] });
     await settings.migrateSettings();

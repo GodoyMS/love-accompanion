@@ -174,18 +174,29 @@ export class Conversation {
     }
   }
 
+  /** The bot never leaves her unanswered: one retry insisting on a reply; only two failures reach you. */
   private async decide(input: DecideInput): Promise<Decision> {
     try {
       return await ports.brain.decide(input);
+    } catch (e) {
+      if (!(e instanceof NoAnswer)) throw e;
+      console.log(`[think] no usable answer (${e.message}), retrying`);
+    }
+    try {
+      return await ports.brain.decide({ ...input, hint: 'Tienes que responderle tú sí o sí con "reply", con cariño y sin inventar nada.' });
     } catch (e) {
       if (e instanceof NoAnswer) return { action: 'handoff', reason: e.message };
       throw e;
     }
   }
 
-  /** When to send: her pace, your hand-back window, and sleep hours if on. */
-  private async sendTime(s: Settings): Promise<{ at: Date; parkedBySleep: boolean }> {
+  /**
+   * When to send: her pace, your hand-back window, and sleep hours if on.
+   * An emergency skips all of that and goes out within seconds.
+   */
+  private async sendTime(s: Settings, urgent = false): Promise<{ at: Date; parkedBySleep: boolean }> {
     const now = ports.clock.now();
+    if (urgent) return { at: new Date(now + ports.clock.rand(3, 10) * 1000), parkedBySleep: false };
     let at = now + ports.clock.rand(s.replyDelaySec[0], s.replyDelaySec[1]) * 1000;
     const manual = await messages.lastManualAt();
     if (manual) {
@@ -211,8 +222,9 @@ export class Conversation {
         return;
 
       case 'handoff':
+        // Only reached when the model failed twice.
         await logEvent('handoff', `${d.reason} — ${preview(pending)}`);
-        await notifyOnce('handoff', 10, `No le respondí, te toca a ti: ${d.reason}\n\nElla: "${preview(pending)}"`);
+        await notifyOnce('handoff', 10, `No pude generar una respuesta (falló dos veces): ${d.reason}\n\nElla: "${preview(pending)}"`);
         return;
 
       case 'disclose': {
@@ -221,7 +233,7 @@ export class Conversation {
         await replies.enqueue({ kind: 'disclose', sendAt: at, parts: [text], readKeys });
         await logEvent('disclose', d.reason);
         await notify(
-          `Ella ${d.direct ? 'preguntó si es un bot' : 'dudó de que fueras tú'}: "${preview(pending)}"\n\nLe voy a decir: "${text}"\n\nDespués quedo en pausa ${s.disclosure.pauseHours} h. Escríbele tú; para que vuelva, mándame /start.`,
+          `Ella ${d.direct ? 'preguntó si es un bot' : 'dudó de que fueras tú'}: "${preview(pending)}"\n\nLe voy a decir: "${text}"\n\nSigo respondiéndole normalmente. Si quieres que pare, mándame /stop o /pause.`,
         );
         return;
       }
@@ -235,7 +247,8 @@ export class Conversation {
       }
 
       case 'reply': {
-        let { at, parkedBySleep } = await this.sendTime(s);
+        const urgent = !!d.urgent;
+        let { at, parkedBySleep } = await this.sendTime(s, urgent);
         let voice: VoiceNote | null = null;
         if (input.voice) {
           try {
@@ -255,12 +268,14 @@ export class Conversation {
         );
         console.log(`[think] ${voice ? 'voice note' : `${d.messages.length} message(s)`} queued for ${at.toISOString()}`);
         if (parkedBySleep) await this.tellParked(at);
-        if (d.alert) {
-          await logEvent('alert', d.alert);
+        // Delicate-but-normal topics only go to the panel log. Only a real emergency pings you
+        // (once per 30 min); the bot keeps answering her meanwhile.
+        if (d.alert || urgent) await logEvent(urgent ? 'urgent' : 'alert', d.alert || 'emergencia');
+        if (urgent) {
           await notifyOnce(
-            'alert',
+            'urgent',
             30,
-            `Tema delicado, lo estoy llevando yo: ${d.alert}\n\nElla: "${preview(pending)}"\nVoy a responder a las ${hhmm(at)}: "${d.messages.join(' / ')}"\n\nSi le escribes tú antes, no envío nada.`,
+            `Emergencia, ya le estoy respondiendo yo: ${d.alert || 'ver chat'}\n\nElla: "${preview(pending)}"\nLe respondo: "${d.messages.join(' / ')}"\n\nSigo acompañándola. Solo te aviso por si quieres intervenir.`,
           );
         }
         return;
@@ -268,8 +283,9 @@ export class Conversation {
     }
   }
 
+  /** Visible in the panel ("Enviar ya"); no WhatsApp ping, you're asleep. */
   private async tellParked(at: Date) {
-    await notify(`Son tus horas de sueño (Ajustes): su respuesta sale a las ${hhmm(at)}. Para enviarla ya, toca "Enviar ya" en el panel.`);
+    await logEvent('deferred', `horas de sueño, sale a las ${hhmm(at)}`);
   }
 
   // ---------- helpers ----------
