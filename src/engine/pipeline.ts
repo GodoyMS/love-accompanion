@@ -13,6 +13,8 @@ const log = pino({ level: config.logLevel });
 let timer: NodeJS.Timeout | null = null;
 let generating = false;
 let rerun = false;
+/** Bumped on every message from her; a reply computed for an older value is stale. */
+let inboxVersion = 0;
 /** Raw WA messages of recent images, so we can show them to Claude. */
 const rawById = new Map<string, WAMessage>();
 
@@ -23,6 +25,7 @@ export async function onPartnerMessage(p: Parsed, raw: WAMessage) {
   }
   // She wrote again: anything queued but not yet sent is now stale — re-think with the full picture.
   console.log(`[in] message from partner (${p.kind})`);
+  inboxVersion++;
   await cancelPending('she wrote again');
   await scheduleThink();
 }
@@ -60,9 +63,14 @@ async function think() {
     ).filter((x): x is NonNullable<typeof x> => !!x);
 
     console.log(`[think] ${ctx.pending.length} unanswered message(s), asking Claude`);
+    const version = inboxVersion;
     const d = await decide(ctx, images, (await getSettings()).autonomy);
     console.log(`[think] decision: ${d.action}`);
-    if (rerun) return; // she wrote while we were thinking; the next pass will handle everything
+    // She wrote while we were thinking: drop this answer, the next pass sees everything.
+    if (rerun || version !== inboxVersion) {
+      console.log('[think] discarded: she wrote again meanwhile');
+      return;
+    }
 
     // The switch may have been flipped while Claude was thinking.
     if (!(await canSend())) return;

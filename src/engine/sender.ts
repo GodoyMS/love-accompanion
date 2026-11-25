@@ -53,6 +53,7 @@ async function tick() {
 
     // Checked right before doing anything visible: the kill switch always wins.
     if (!(await canSend())) return finish(job.id, 'cancelled', 'switch off at send time');
+    if (await sheWroteSince(job.created_at)) return finish(job.id, 'cancelled', 'stale: she wrote again');
 
     if (offlineTimer) clearTimeout(offlineTimer);
     await wa.presence('available');
@@ -72,6 +73,11 @@ async function tick() {
     const parts: string[] = job.parts ?? [];
     for (let i = 0; i < parts.length; i++) {
       if (!(await canSend())) return finish(job.id, 'cancelled', `switch off after ${i} part(s)`);
+      if (await sheWroteSince(job.created_at)) {
+        // She wrote again: stop here and let the next reply take her new message into account.
+        await wa.presence('paused');
+        return finish(job.id, i === 0 ? 'cancelled' : 'sent', `stopped after ${i} part(s): she wrote`);
+      }
       await wa.presence('composing');
       await sleep(typingMs(parts[i]));
       if (!(await canSend())) {
@@ -99,6 +105,11 @@ async function tick() {
   } finally {
     busy = false;
   }
+}
+
+async function sheWroteSince(t: Date) {
+  const r = await q(`select 1 from messages where not from_me and kind <> 'reaction' and ts > $1 limit 1`, [t]);
+  return (r.rowCount ?? 0) > 0;
 }
 
 /** Anything stuck in "sending" from a crash is not retried (better to miss than double-send). */
